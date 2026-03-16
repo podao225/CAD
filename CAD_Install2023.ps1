@@ -186,7 +186,18 @@ Write-Host "✅ 所有验证通过，开始安装" -ForegroundColor Green
 
 # 8. 安装
 try {
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
+    Write-Host "🔄 正在启动 AutoCAD 2023 安装，请耐心等待安装完成..." -ForegroundColor Cyan
+    $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
+
+    # 循环等待 Installer.exe 进程结束（真正等待安装完成）
+    do {
+        Start-Sleep -Seconds 5
+        $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
+    } while ($installerProcess -ne $null)
+
+    # 再等3秒，确保安装后清理动作完成
+    Start-Sleep -Seconds 3
+
     Write-Host "`n🎉 安装完成！" -ForegroundColor Green
     Write-Host "ℹ️ 日志已保存到：$logPath" -ForegroundColor Cyan
 
