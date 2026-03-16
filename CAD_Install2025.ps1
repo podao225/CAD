@@ -165,7 +165,7 @@ if (-not $skipAll) {
         Write-Host "✅ C盘已存在压缩包，跳过下载" -ForegroundColor Green
     }
 
-    # 解压到D盘
+    # 解压到D盘（修复版：跳过压缩包内顶层文件夹，直接提取内容到FinalDir）
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -174,13 +174,25 @@ if (-not $skipAll) {
         $total = $entries.Count
         $current = 0
 
+        # 找到压缩包内的顶层文件夹名（如 AutoCAD_2025_Shell_YJ\）
+        $topFolder = $entries | Where-Object { $_.FullName -match '^[^/]+/$' } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $topFolder) { $topFolder = "" }
+
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                $targetPath = Join-Path $FinalDir $entry.FullName
+                # 核心修复：如果路径以顶层文件夹开头，就截掉这部分
+                $relativePath = if ($entry.FullName.StartsWith($topFolder)) {
+                    $entry.FullName.Substring($topFolder.Length)
+                } else {
+                    $entry.FullName
+                }
+                $targetPath = Join-Path $FinalDir $relativePath
                 $targetDir = Split-Path $targetPath -Parent
+                
                 if (-not (Test-Path $targetDir)) {
                     [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
                 }
+                # 仅解压文件（跳过目录条目）
                 if (-not $entry.FullName.EndsWith("/")) {
                     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
                 }
