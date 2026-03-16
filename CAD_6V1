@@ -1,4 +1,3 @@
-# ===================== AutoCAD 多版本安装程序 =====================
 # 兼容编码
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
