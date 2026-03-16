@@ -1,7 +1,3 @@
-﻿<#
-最终版：C盘下载 + D盘检测 + 安装后删除666.lnk + 日志保存到解压文件夹
-#>
-
 # 1. 兼容编码
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
