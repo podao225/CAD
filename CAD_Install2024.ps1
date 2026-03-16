@@ -208,46 +208,76 @@ try {
     Write-Host "🔄 正在启动 AutoCAD 2024 安装，请耐心等待安装完成..." -ForegroundColor Cyan
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
-    # 修改：等待Installer.exe进程结束 且 D:\Autodesk\AutoCAD 2024中大于800个项目
+    # 第一步：等待Installer.exe进程完全结束（静默等待，无提示）
+    $installerWaitCount = 0
+    $maxInstallerWait = 360  # 最多等待30分钟（60*5秒）
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
-        # 检测2024目录文件数量
-        $cad2024Dir = "D:\Autodesk\AutoCAD 2024"
-        $fileCount = 0
-        if (Test-Path $cad2024Dir -PathType Container) {
-            $fileCount = (Get-ChildItem -Path $cad2024Dir -Recurse -ErrorAction SilentlyContinue).Count
+        $installerWaitCount++
+        
+        # 超时保护：防止进程一直存在导致卡死
+        if ($installerWaitCount -ge $maxInstallerWait) {
+            Write-Host "`n⚠️ Installer进程等待超时，强制继续检测" -ForegroundColor Yellow
+            break
         }
-        Write-Host "`r🔍 安装检测：Installer进程=$($installerProcess -ne $null) | 2024目录文件数=$fileCount" -NoNewline -ForegroundColor Cyan
-    } while ($installerProcess -ne $null -or $fileCount -le 800)
-    Write-Host "" # 换行
+    } while ($installerProcess -ne $null)
 
-    # 再等3秒，确保安装后清理动作完成
+    # 进程结束后显示检测提示，仅检测目标目录是否存在acad.exe
+    Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
+    $cad2024Installed = $false
+    $fileWaitCount = 0
+    $maxFileWait = 240  # 最多等待20分钟（48*5秒）
+
+    # 第二步：仅检测$TargetAcadDir中是否存在acad.exe
+    do {
+        Start-Sleep -Seconds 5
+        $fileWaitCount++
+        
+        # 核心检测：目标目录是否存在acad.exe文件
+        if (Test-Path $TargetAcadExe -PathType Leaf) {
+            $cad2024Installed = $true
+        }
+
+        # 超时保护：防止文件一直不存在导致卡死
+        if ($fileWaitCount -ge $maxFileWait) {
+            Write-Host "`n❌ 检测超时：$TargetAcadExe 文件未找到" -ForegroundColor Red
+            $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
+            if ($userChoice -eq "Y" -or $userChoice -eq "y") {
+                $cad2024Installed = $true
+            } else {
+                exit 1
+            }
+        }
+    } while (-not $cad2024Installed)
+
+    Write-Host "✅ 安装检测完成" -ForegroundColor Green
     Start-Sleep -Seconds 3
 
     Write-Host "`n🎉 安装完成！" -ForegroundColor Green
     Write-Host "ℹ️ 日志已保存到：$logPath" -ForegroundColor Cyan
 
-    # 安装完成后自动删除 Install AutoCAD 2024_1.bat
     if (Test-Path $SetupBatPath -PathType Leaf) {
         Remove-Item $SetupBatPath -Force
         Write-Host "🗑️ 已自动打扫安装批处理文件" -ForegroundColor Green
     }
 
-    # 新增：复制acad.exe到目标目录并替换，然后删除源文件
     Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
     if (Test-Path $SourceAcadExe -PathType Leaf) {
-        # 检查目标目录是否存在，不存在则创建
+        # 确保目标目录存在
         if (-not (Test-Path $TargetAcadDir -PathType Container)) {
             New-Item -Path $TargetAcadDir -ItemType Directory -Force | Out-Null
             Write-Host "📁 已创建目标目录：$TargetAcadDir" -ForegroundColor Yellow
         }
         
-        # 复制并覆盖（强制替换）
+        # 备份原文件（可选）
+        if (Test-Path $TargetAcadExe -PathType Leaf) {
+            Copy-Item -Path $TargetAcadExe -Destination "$TargetAcadExe.bak" -Force -ErrorAction SilentlyContinue
+        }
+        # 执行替换
         Copy-Item -Path $SourceAcadExe -Destination $TargetAcadExe -Force
         Write-Host "✅ 已激活完成" -ForegroundColor Green
 
-        # 删除源文件
         Remove-Item -Path $SourceAcadExe -Force
         Write-Host "🗑️ 已打扫源文件" -ForegroundColor Green
     }
@@ -257,13 +287,20 @@ try {
 }
 catch {
     Write-Host "`n❌ 安装/文件替换失败：$($_.Exception.Message)" -ForegroundColor Red
+    Read-Host "按任意键退出"
+    exit 1
 }
 
 # 9. 脚本自删除
 $scriptPath = $MyInvocation.MyCommand.Definition
 if (Test-Path $scriptPath -PathType Leaf) {
-    Remove-Item $scriptPath -Force
-    Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
+    try {
+        Remove-Item $scriptPath -Force
+        Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "⚠️ 脚本自删除失败：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 Read-Host "`n所有操作结束，按任意键退出"
