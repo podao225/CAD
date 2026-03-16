@@ -205,24 +205,38 @@ try {
     Write-Host "🔄 正在启动 AutoCAD 2025 安装，请耐心等待安装完成..." -ForegroundColor Cyan
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
-    # 第一步：先等待Installer.exe进程完全结束
+    # 第一步：先等待Installer.exe进程完全结束（静默等待，无提示）
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
     } while ($installerProcess -ne $null)
 
-    # 进程结束后再显示检测提示，检测桌面AutoCAD 2025快捷方式
+    # 进程结束后显示检测提示，开始检测注册表验证AutoCAD 2025安装状态
     Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
-    $cadShortcutName = "AutoCAD 2025 - 简体中文 (Simplified Chinese).lnk"
-    $desktopPath = [Environment]::GetFolderPath('Desktop')
-    $shortcutPath = Join-Path $desktopPath $cadShortcutName
-    $shortcutExists = $false
+    $cad2025Installed = $false
+    # AutoCAD 2025 典型安装注册表路径（64位系统）
+    $regPath = "HKLM:\SOFTWARE\Autodesk\AutoCAD\R29.0\ACAD-B001:409"
 
-    # 第二步：检测桌面是否存在指定快捷方式
+    # 第二步：循环检测注册表，确认2025已安装
     do {
         Start-Sleep -Seconds 5
-        $shortcutExists = Test-Path $shortcutPath -PathType Leaf
-    } while (-not $shortcutExists)
+        # 检测注册表项是否存在，同时兼容32位/64位系统
+        if (Test-Path $regPath -ErrorAction SilentlyContinue) {
+            $cad2025Installed = $true
+        } else {
+            # 备用检测路径（覆盖不同语言/版本变体）
+            $altRegPaths = @(
+                "HKLM:\SOFTWARE\Autodesk\AutoCAD\R29.0",
+                "HKLM:\SOFTWARE\WOW6432Node\Autodesk\AutoCAD\R29.0"
+            )
+            foreach ($path in $altRegPaths) {
+                if (Test-Path $path -ErrorAction SilentlyContinue) {
+                    $cad2025Installed = $true
+                    break
+                }
+            }
+        }
+    } while (-not $cad2025Installed)
 
     Write-Host "✅ 安装检测完成" -ForegroundColor Green
     Start-Sleep -Seconds 3
