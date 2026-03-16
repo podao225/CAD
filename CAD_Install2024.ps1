@@ -87,7 +87,7 @@ if (-not $skipAll) {
 
         $startTime = Get-Date
         $lastSize = 0
-        $totalSizeEst = 3.58 * 1GB
+        $totalSizeEst = 2.94 * 1GB
 
         while ($job.State -eq "Running") {
             if (Test-Path $ZipPath -PathType Leaf) {
