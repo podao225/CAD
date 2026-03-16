@@ -57,7 +57,7 @@ function Check-DiskSpace {
 $DownloadUrl  = "http://115.191.18.103:5244/d/%E7%A7%BB%E5%8A%A8/CAD_Shell/AutoCAD_2026_Shell_YJ.zip"
 $ZipPath      = Join-Path $env:TEMP "AutoCAD_2026_Shell_YJ.zip"  # C盘%temp%下载
 $FinalDir     = "D:\AutoCAD_2026_Shell_YJ"                      # D盘固定解压目录
-$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2026_1.bat" # 安装批处理文件
+$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2026.bat" # 安装批处理文件
 $ImageDir     = Join-Path $FinalDir "image"                      # 安装镜像目录
 $logPath      = Join-Path $FinalDir "install_log.txt"            # 日志保存路径
 $SourceAcadExe = Join-Path $FinalDir "acad.exe"                  # 源激活文件路径
@@ -194,7 +194,7 @@ if ($imageItems -eq $null -or $imageItems.Count -eq 0) {
     exit 1
 }
 if (-not (Test-Path $SetupBatPath)) {
-    Write-Host "❌ 未找到安装文件 Install AutoCAD 2026_1.bat" -ForegroundColor Red
+    Write-Host "❌ 未找到安装文件 Install AutoCAD 2026.bat" -ForegroundColor Red
     Read-Host "按任意键退出"
     exit 1
 }
