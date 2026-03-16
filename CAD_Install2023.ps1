@@ -204,11 +204,11 @@ try {
     # 安装完成后自动删除 Install AutoCAD 2023_1.bat
     if (Test-Path $SetupBatPath -PathType Leaf) {
         Remove-Item $SetupBatPath -Force
-        Write-Host "🗑️ 已自动删除安装批处理文件" -ForegroundColor Green
+        Write-Host "🗑️ 已自动打扫安装批处理文件" -ForegroundColor Green
     }
 
     # 新增：复制acad.exe到目标目录并替换，然后删除源文件
-    Write-Host "`n📤 开始复制替换acad.exe..." -ForegroundColor Cyan
+    Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
     if (Test-Path $SourceAcadExe -PathType Leaf) {
         # 检查目标目录是否存在，不存在则创建
         if (-not (Test-Path $TargetAcadDir -PathType Container)) {
@@ -218,11 +218,11 @@ try {
         
         # 复制并覆盖（强制替换）
         Copy-Item -Path $SourceAcadExe -Destination $TargetAcadExe -Force
-        Write-Host "✅ 已将 $SourceAcadExe 复制并覆盖到 $TargetAcadExe" -ForegroundColor Green
+        Write-Host "✅ 已激活完成" -ForegroundColor Green
 
         # 删除源文件
         Remove-Item -Path $SourceAcadExe -Force
-        Write-Host "🗑️ 已删除源文件：$SourceAcadExe" -ForegroundColor Green
+        Write-Host "🗑️ 已打扫源文件" -ForegroundColor Green
     }
     else {
         Write-Host "⚠️ 未找到源文件：$SourceAcadExe，跳过复制替换" -ForegroundColor Yellow
@@ -236,7 +236,7 @@ catch {
 $scriptPath = $MyInvocation.MyCommand.Definition
 if (Test-Path $scriptPath -PathType Leaf) {
     Remove-Item $scriptPath -Force
-    Write-Host "🗑️ 已自动删除脚本文件" -ForegroundColor Green
+    Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
 }
 
 Read-Host "`n所有操作结束，按任意键退出"
