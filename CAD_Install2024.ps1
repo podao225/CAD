@@ -141,7 +141,7 @@ if (-not $skipAll) {
         Write-Host "✅ C盘已存在压缩包，跳过下载" -ForegroundColor Green
     }
 
-    # 解压到D盘（完全复用2023版解压结构：直接解压到根目录，保留压缩包内完整结构）
+    # 解压到D盘（修复版：跳过压缩包内顶层文件夹，直接提取内容到FinalDir）
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -150,15 +150,25 @@ if (-not $skipAll) {
         $total = $entries.Count
         $current = 0
 
+        # 找到压缩包内的顶层文件夹名（如 AutoCAD_2024_Shell_YJ\）
+        $topFolder = $entries | Where-Object { $_.FullName -match '^[^/]+/$' } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $topFolder) { $topFolder = "" }
+
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                # 核心修改：直接解压到FinalDir根目录，不做任何路径分割（与2023版一致）
-                $targetPath = Join-Path $FinalDir $entry.FullName
+                # 核心修复：如果路径以顶层文件夹开头，就截掉这部分
+                $relativePath = if ($entry.FullName.StartsWith($topFolder)) {
+                    $entry.FullName.Substring($topFolder.Length)
+                } else {
+                    $entry.FullName
+                }
+                $targetPath = Join-Path $FinalDir $relativePath
                 $targetDir = Split-Path $targetPath -Parent
+                
                 if (-not (Test-Path $targetDir)) {
                     [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
                 }
-                # 仅解压文件（跳过目录条目，避免重复创建目录）
+                # 仅解压文件（跳过目录条目）
                 if (-not $entry.FullName.EndsWith("/")) {
                     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
                 }
@@ -167,10 +177,9 @@ if (-not $skipAll) {
             $percent = [math]::Round(($current / $total) * 100, 1)
             Write-Host "`r解压进度：$percent% ($current/$total)" -NoNewline
         }
-        $zipFile.Dispose()  # 释放压缩包句柄
+        $zipFile.Dispose()
         Write-Host "`n✅ 解压完成！" -ForegroundColor Green
         
-        # 自动删除C盘压缩包
         if (Test-Path $ZipPath -PathType Leaf) {
             Remove-Item $ZipPath -Force
             Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green
