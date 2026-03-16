@@ -57,7 +57,7 @@ function Check-DiskSpace {
 $DownloadUrl  = "http://115.191.18.103:5244/d/%E7%A7%BB%E5%8A%A8/CAD_Shell/AutoCAD_2025_Shell_YJ.zip"
 $ZipPath      = Join-Path $env:TEMP "AutoCAD_2025_Shell_YJ.zip"
 $FinalDir     = "D:\AutoCAD_2025_Shell_YJ"
-$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2025_1.bat"
+$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2025.bat"
 $ImageDir     = Join-Path $FinalDir "image"
 $logPath      = Join-Path $FinalDir "install_log.txt"
 $SourceAcadExe = Join-Path $FinalDir "acad.exe"
@@ -194,7 +194,7 @@ if ($imageItems -eq $null -or $imageItems.Count -eq 0) {
     exit 1
 }
 if (-not (Test-Path $SetupBatPath)) {
-    Write-Host "❌ 未找到安装文件 Install AutoCAD 2025_1.bat" -ForegroundColor Red
+    Write-Host "❌ 未找到安装文件 Install AutoCAD 2025.bat" -ForegroundColor Red
     Read-Host "按任意键退出"
     exit 1
 }
