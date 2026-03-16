@@ -20,12 +20,12 @@ if (-not $isAdmin) {
 # 新增：安装前清理Windows Update重启项（通过临时BAT文件管理员运行）
 Write-Host "`n🧹 正在清理Windows Update重启项..." -ForegroundColor Cyan
 # 1. 定义临时BAT文件路径
-$tempBatPath = Join-Path $env:TEMP "CleanWU Reboot.bat"
+$tempBatPath = Join-Path $env:TEMP "CleanWU_Reboot.bat"  # 修复BAT文件名空格问题
 # 2. 写入BAT文件内容
 @"
 @echo off
 :: 重启修复 - 清理Windows Update强制重启项
-reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" /f
+reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" /f 2>nul
 :: 运行完成
 "@ | Out-File -FilePath $tempBatPath -Encoding ASCII
 # 3. 管理员身份运行BAT文件
@@ -47,8 +47,8 @@ function Check-DiskSpace {
     $cFreeGB = [math]::Round($cDrive.AvailableFreeSpace / 1GB, 1)
     $dFreeGB = [math]::Round($dDrive.AvailableFreeSpace / 1GB, 1)
 
-    if ($cFreeGB -lt 4) { throw "C盘空间不足4GB（需存放压缩包）" }
-    if ($dFreeGB -lt 10) { throw "D盘空间不足10GB（安装程序）" }
+    if ($cFreeGB -lt 4) { throw "C盘空间不足4GB（当前可用：$cFreeGB GB）" }
+    if ($dFreeGB -lt 10) { throw "D盘空间不足10GB（当前可用：$dFreeGB GB）" }
 
     return @{ C = $cFreeGB; D = $dFreeGB }
 }
@@ -63,6 +63,11 @@ $logPath      = Join-Path $FinalDir "install_log.txt"
 $SourceAcadExe = Join-Path $FinalDir "acad.exe"
 $TargetAcadDir = "D:\Autodesk\AutoCAD 2025"
 $TargetAcadExe = Join-Path $TargetAcadDir "acad.exe"
+
+# 确保目标目录存在
+if (-not (Test-Path $FinalDir)) {
+    New-Item -Path $FinalDir -ItemType Directory -Force | Out-Null
+}
 
 # 6. 优先检测D盘是否已有完整安装文件
 Write-Host "`n🔍 磁盘检测中..." -ForegroundColor Cyan
@@ -100,8 +105,15 @@ if (-not $skipAll) {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             $webClient = New-Object System.Net.WebClient
             $webClient.Headers.Add("User-Agent", "Mozilla/5.0")
-            $webClient.DownloadFile($url, $path)
-            $webClient.Dispose()
+            try {
+                $webClient.DownloadFile($url, $path)
+            }
+            catch {
+                Write-Error "下载失败：$($_.Exception.Message)"
+            }
+            finally {
+                $webClient.Dispose()
+            }
         } -ArgumentList $DownloadUrl, $ZipPath
 
         $startTime = Get-Date
@@ -127,8 +139,20 @@ if (-not $skipAll) {
             Start-Sleep -Milliseconds 500
         }
 
-        Receive-Job $job -Wait | Out-Null
+        # 检查下载任务是否出错
+        $jobResult = Receive-Job $job -Wait
+        if ($jobResult -match "下载失败") {
+            Write-Host "`n❌ $jobResult" -ForegroundColor Red
+            Read-Host "按任意键退出"
+            exit 1
+        }
         Remove-Job $job -Force
+
+        if (-not (Test-Path $ZipPath) -or (Get-Item $ZipPath).Length -eq 0) {
+            Write-Host "`n❌ 下载的安装包为空或损坏" -ForegroundColor Red
+            Read-Host "按任意键退出"
+            exit 1
+        }
 
         $endTime = Get-Date
         $totalTime = ($endTime - $startTime).TotalSeconds
@@ -206,33 +230,68 @@ try {
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
     # 第一步：先等待Installer.exe进程完全结束（静默等待，无提示）
+    $installerWaitCount = 0
+    $maxInstallerWait = 360  # 最多等待30分钟（60*5秒）
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
+        $installerWaitCount++
+        # 超时保护：防止进程一直存在导致卡死
+        if ($installerWaitCount -ge $maxInstallerWait) {
+            Write-Host "`n⚠️ Installer进程等待超时，强制继续" -ForegroundColor Yellow
+            break
+        }
     } while ($installerProcess -ne $null)
 
     # 进程结束后显示检测提示，开始检测注册表验证AutoCAD 2025安装状态
     Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
     $cad2025Installed = $false
-    # AutoCAD 2025 典型安装注册表路径（64位系统）
-    $regPath = "HKLM:\SOFTWARE\Autodesk\AutoCAD\R29.0\ACAD-B001:409"
+    $regWaitCount = 0
+    $maxRegWait = 240  # 最多等待20分钟（48*5秒）
+    # AutoCAD 2025 注册表检测（多维度）
+    $regCheckItems = @(
+        # 主版本注册表
+        @{ Path = "HKLM:\SOFTWARE\Autodesk\AutoCAD\R29.0"; Type = "Path" },
+        # 32位兼容注册表
+        @{ Path = "HKLM:\SOFTWARE\WOW6432Node\Autodesk\AutoCAD\R29.0"; Type = "Path" },
+        # 安装位置注册表
+        @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7D2F3875-0208-0000-0000-0000000FF1CE}"; Type = "Path" },
+        # 产品信息注册表
+        @{ Path = "HKLM:\SOFTWARE\Autodesk\Inventor\RegistryVersion29.0"; Type = "Path" }
+    )
 
-    # 第二步：循环检测注册表，确认2025已安装
+    # 第二步：循环检测注册表，确认2025已安装（带超时保护）
     do {
         Start-Sleep -Seconds 5
-        # 检测注册表项是否存在，同时兼容32位/64位系统
-        if (Test-Path $regPath -ErrorAction SilentlyContinue) {
-            $cad2025Installed = $true
-        } else {
-            # 备用检测路径（覆盖不同语言/版本变体）
-            $altRegPaths = @(
-                "HKLM:\SOFTWARE\Autodesk\AutoCAD\R29.0",
-                "HKLM:\SOFTWARE\WOW6432Node\Autodesk\AutoCAD\R29.0"
-            )
-            foreach ($path in $altRegPaths) {
-                if (Test-Path $path -ErrorAction SilentlyContinue) {
+        $regWaitCount++
+        
+        # 遍历所有检测项
+        foreach ($item in $regCheckItems) {
+            if (Test-Path $item.Path -ErrorAction SilentlyContinue) {
+                $cad2025Installed = $true
+                break
+            }
+        }
+
+        # 超时保护：防止注册表检测不到导致卡死
+        if ($regWaitCount -ge $maxRegWait) {
+            Write-Host "`n⚠️ 注册表检测超时，确认安装目录是否存在" -ForegroundColor Yellow
+            # 备用检测：检查安装目录是否存在且有足够文件
+            if (Test-Path $TargetAcadDir -PathType Container) {
+                $dirFiles = (Get-ChildItem -Path $TargetAcadDir -Recurse -ErrorAction SilentlyContinue).Count
+                if ($dirFiles -gt 500) {  # 只要目录有超过500个文件，判定为安装完成
                     $cad2025Installed = $true
-                    break
+                    Write-Host "✅ 检测到安装目录文件数达标，判定安装完成" -ForegroundColor Green
+                }
+            }
+            if (-not $cad2025Installed) {
+                Write-Host "`n❌ 安装检测超时，可能安装未完成" -ForegroundColor Red
+                # 询问用户是否继续
+                $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
+                if ($userChoice -eq "Y" -or $userChoice -eq "y") {
+                    $cad2025Installed = $true
+                } else {
+                    exit 1
                 }
             }
         }
@@ -251,11 +310,17 @@ try {
 
     Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
     if (Test-Path $SourceAcadExe -PathType Leaf) {
+        # 确保目标目录存在
         if (-not (Test-Path $TargetAcadDir -PathType Container)) {
             New-Item -Path $TargetAcadDir -ItemType Directory -Force | Out-Null
             Write-Host "📁 已创建目标目录：$TargetAcadDir" -ForegroundColor Yellow
         }
         
+        # 备份原文件（可选）
+        if (Test-Path $TargetAcadExe -PathType Leaf) {
+            Copy-Item -Path $TargetAcadExe -Destination "$TargetAcadExe.bak" -Force -ErrorAction SilentlyContinue
+        }
+        # 执行替换
         Copy-Item -Path $SourceAcadExe -Destination $TargetAcadExe -Force
         Write-Host "✅ 已激活完成" -ForegroundColor Green
 
@@ -268,13 +333,20 @@ try {
 }
 catch {
     Write-Host "`n❌ 安装/文件替换失败：$($_.Exception.Message)" -ForegroundColor Red
+    Read-Host "按任意键退出"
+    exit 1
 }
 
 # 9. 脚本自删除
 $scriptPath = $MyInvocation.MyCommand.Definition
 if (Test-Path $scriptPath -PathType Leaf) {
-    Remove-Item $scriptPath -Force
-    Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
+    try {
+        Remove-Item $scriptPath -Force
+        Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "⚠️ 脚本自删除失败：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 Read-Host "`n所有操作结束，按任意键退出"
