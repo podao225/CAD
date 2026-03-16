@@ -17,7 +17,7 @@ if (-not $isAdmin) {
     exit
 }
 
-# 4. 双盘空间校验：C盘≥2GB，D盘≥10GB
+# 4. 双盘空间校验：C盘≥4GB，D盘≥10GB
 function Check-DiskSpace {
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
     $dDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
