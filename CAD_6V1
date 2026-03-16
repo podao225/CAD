@@ -3,6 +3,11 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
+# 核心修改：启动时将666复制到剪贴板
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.Clipboard]::SetText("666")
+Write-Host "✅ 剪贴板已更新为：666" -ForegroundColor Green
+
 # 兼容TLS
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -32,8 +37,8 @@ $CADVersionsConfig = @{
         HasActivation    = $false
         BatFileName      = $null
         SourceAcadExe    = $null
-        TargetAcadDir    = $null
-        TargetAcadExe    = $null
+        TargetAcadDir    = "D:\Autodesk\AutoCAD 2020"  # 新增：目标安装目录
+        TargetAcadExe    = Join-Path "D:\Autodesk\AutoCAD 2020" "acad.exe"  # 新增：目标acad.exe路径
         CleanWuBatName   = "CleanWU Reboot.bat"
         ShowSpaceDetail  = $false
         DownloadErrorCheck = $false
@@ -50,8 +55,8 @@ $CADVersionsConfig = @{
         HasActivation    = $false
         BatFileName      = $null
         SourceAcadExe    = $null
-        TargetAcadDir    = $null
-        TargetAcadExe    = $null
+        TargetAcadDir    = "D:\Autodesk\AutoCAD 2021"  # 新增：目标安装目录
+        TargetAcadExe    = Join-Path "D:\Autodesk\AutoCAD 2021" "acad.exe"  # 新增：目标acad.exe路径
         CleanWuBatName   = "CleanWU Reboot.bat"
         ShowSpaceDetail  = $false
         DownloadErrorCheck = $false
@@ -139,7 +144,7 @@ function Clear-WURebootItem {
     $tempBatPath = Join-Path $env:TEMP $BatFileName
     @"
 @echo off
-:: 重启修复 - 清理Windows Update强制重启项
+:: 重启修复 - 清理Windows Update重启项
 reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" /f 2>nul
 :: 运行完成
 "@ | Out-File -FilePath $tempBatPath -Encoding ASCII
@@ -481,8 +486,52 @@ function Install-CAD {
             Start-Sleep -Seconds 3
         }
         else {
-            # 2020/2021版本：直接运行lnk
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$($VersionConfig.InstallFilePath)"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
+            # 2020/2021版本：运行lnk + 新增识别逻辑（参考2023版本）
+            Write-Host "🔄 正在启动 AutoCAD $version 安装，请耐心等待安装完成..." -ForegroundColor Cyan
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$($VersionConfig.InstallFilePath)"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
+
+            # 新增：等待Installer.exe进程结束（和2023版本一致）
+            $installerWaitCount = 0
+            $maxInstallerWait = 360  # 30分钟超时
+            do {
+                Start-Sleep -Seconds 5
+                $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
+                $installerWaitCount++
+                
+                if ($installerWaitCount -ge $maxInstallerWait) {
+                    Write-Host "`n⚠️ Installer进程等待超时，强制继续检测" -ForegroundColor Yellow
+                    break
+                }
+            } while ($installerProcess -ne $null)
+
+            # 新增：检测acad.exe是否存在（和2023版本一致）
+            Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
+            $cadInstalled = $false
+            $fileWaitCount = 0
+            $maxFileWait = 240  # 20分钟超时
+
+            do {
+                Start-Sleep -Seconds 5
+                $fileWaitCount++
+                
+                if (Test-Path $VersionConfig.TargetAcadExe -PathType Leaf) {
+                    $cadInstalled = $true
+                }
+
+                if ($fileWaitCount -ge $maxFileWait) {
+                    Write-Host "`n❌ 检测超时：$($VersionConfig.TargetAcadExe) 文件未找到" -ForegroundColor Red
+                    $userChoice = Read-Host "是否强制继续？(Y/N)"
+                    if ($userChoice -eq "Y" -or $userChoice -eq "y") {
+                        $cadInstalled = $true
+                    } else {
+                        Read-Host "按任意键返回版本选择菜单"
+                        return
+                    }
+                }
+            } while (-not $cadInstalled)
+
+            Write-Host "✅ 安装检测完成" -ForegroundColor Green
+            Start-Sleep -Seconds 3
         }
 
         Write-Host "`n🎉 AutoCAD $version 安装完成！" -ForegroundColor Green
