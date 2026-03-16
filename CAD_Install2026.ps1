@@ -17,6 +17,25 @@ if (-not $isAdmin) {
     exit
 }
 
+# 新增：安装前执行注册表清理+重启资源管理器（通过临时BAT文件管理员运行）
+Write-Host "`n🧹 正在清理系统托盘缓存..." -ForegroundColor Cyan
+# 1. 定义临时BAT文件路径
+$tempBatPath = Join-Path $env:TEMP "CleanTrayCache.bat"
+# 2. 写入BAT文件内容
+@"
+@echo off
+reg delete "HKEY_CLASSES_ROOT\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify" /v IconStreams /f
+reg delete "HKEY_CLASSES_ROOT\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify" /v PastIconsStream /f
+taskkill /f /im explorer.exe&&start explorer.exe
+"@ | Out-File -FilePath $tempBatPath -Encoding ASCII
+# 3. 管理员身份运行BAT文件
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c ""$tempBatPath""" -Verb RunAs -Wait
+# 4. 删除临时BAT文件
+if (Test-Path $tempBatPath) {
+    Remove-Item $tempBatPath -Force
+}
+Write-Host "✅ 系统托盘缓存清理完成" -ForegroundColor Green
+
 # 4. 双盘空间校验：C盘≥4GB，D盘≥10GB
 function Check-DiskSpace {
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
@@ -186,11 +205,19 @@ try {
     Write-Host "🔄 正在启动 AutoCAD 2026 安装，请耐心等待安装完成..." -ForegroundColor Cyan
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
-    # 循环等待安装进程结束
+    # 修改：等待Installer.exe进程结束 且 D:\Autodesk\AutoCAD 2026中大于800个项目
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
-    } while ($installerProcess -ne $null)
+        # 检测2026目录文件数量
+        $cad2026Dir = "D:\Autodesk\AutoCAD 2026"
+        $fileCount = 0
+        if (Test-Path $cad2026Dir -PathType Container) {
+            $fileCount = (Get-ChildItem -Path $cad2026Dir -Recurse -ErrorAction SilentlyContinue).Count
+        }
+        Write-Host "`r🔍 安装检测：Installer进程=$($installerProcess -ne $null) | 2026目录文件数=$fileCount" -NoNewline -ForegroundColor Cyan
+    } while ($installerProcess -ne $null -or $fileCount -le 800)
+    Write-Host "" # 换行
 
     Start-Sleep -Seconds 3
 
