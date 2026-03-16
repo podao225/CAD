@@ -87,7 +87,7 @@ if (-not $skipAll) {
 
         $startTime = Get-Date
         $lastSize = 0
-        $totalSizeEst = 3.58 * 1GB  # 修正为实际压缩包大小3.58GB
+        $totalSizeEst = 3.58 * 1GB
 
         while ($job.State -eq "Running") {
             if (Test-Path $ZipPath -PathType Leaf) {
@@ -122,7 +122,8 @@ if (-not $skipAll) {
         Write-Host "✅ C盘已存在压缩包，跳过下载" -ForegroundColor Green
     }
 
-    # 解压到D盘（仅修改此处：去掉压缩包顶层目录）
+    # ====================== 仅修改此处的解压逻辑 ======================
+    # 解压到D盘（适配你的压缩包结构：直接解压到FinalDir，去掉顶层目录）
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -133,19 +134,14 @@ if (-not $skipAll) {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                # 适配你的压缩包结构：去掉顶层目录 AutoCAD_2023_Shell_YJ/
-                $entryParts = $entry.FullName -split '[\\/]', 2
-                if ($entryParts.Count -gt 1 -and $entryParts[0] -eq "AutoCAD_2023_Shell_YJ") {
-                    $innerPath = $entryParts[1]
-                    $targetPath = Join-Path $FinalDir $innerPath
-                } else {
-                    $targetPath = Join-Path $FinalDir $entry.FullName
-                }
+                # 你的压缩包没有额外顶层目录，直接解压到FinalDir
+                $targetPath = Join-Path $FinalDir $entry.FullName
                 $targetDir = Split-Path $targetPath -Parent
                 if (-not (Test-Path $targetDir)) {
                     [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
                 }
-                if (-not $entry.FullName.EndsWith("/")) { # 跳过目录条目，只解压文件
+                # 跳过目录条目，只解压文件
+                if (-not $entry.FullName.EndsWith("/")) {
                     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
                 }
             }
@@ -167,6 +163,7 @@ if (-not $skipAll) {
         Read-Host "按任意键退出"
         exit 1
     }
+    # ====================== 解压逻辑修改结束 ======================
 }
 
 # 7. 安装前验证
