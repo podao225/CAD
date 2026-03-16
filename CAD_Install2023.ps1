@@ -4,10 +4,10 @@ $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
 # 2. 兼容TLS
 try {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType]::Tls12
 }
 catch {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType]::Tls
 }
 
 # 3. 强制管理员运行
@@ -71,14 +71,14 @@ if (-not $skipAll) {
         exit 1
     }
 
-    Write-Host "`n❌ D盘未检测到完整文件，开始下载" -ForegroundColor Cyan
+    Write-Host "`n❌ 未检测到完整文件，开始下载" -ForegroundColor Cyan
     
     if (-not (Test-Path $ZipPath -PathType Leaf)) {
         Write-Host "`n📥 正在下载安装包（耐心等待）..." -ForegroundColor Yellow
         
         $job = Start-Job -ScriptBlock {
             param($url, $path)
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType]::Tls12
             $webClient = New-Object System.Net.WebClient
             $webClient.Headers.Add("User-Agent", "Mozilla/5.0")
             $webClient.DownloadFile($url, $path)
@@ -87,7 +87,7 @@ if (-not $skipAll) {
 
         $startTime = Get-Date
         $lastSize = 0
-        $totalSizeEst = 1.88 * 1GB
+        $totalSizeEst = 3.58 * 1GB  # 修正为实际压缩包大小3.58GB
 
         while ($job.State -eq "Running") {
             if (Test-Path $ZipPath -PathType Leaf) {
@@ -122,7 +122,7 @@ if (-not $skipAll) {
         Write-Host "✅ C盘已存在压缩包，跳过下载" -ForegroundColor Green
     }
 
-    # 解压到D盘（仅修改此处：适配实际解压结构，去掉顶层目录）
+    # 解压到D盘（仅修改此处：去掉压缩包顶层目录）
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -133,9 +133,9 @@ if (-not $skipAll) {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                # 核心修改：只分割一次，去掉压缩包顶层目录，直接解压到FinalDir
+                # 适配你的压缩包结构：去掉顶层目录 AutoCAD_2023_Shell_YJ/
                 $entryParts = $entry.FullName -split '[\\/]', 2
-                if ($entryParts.Count -gt 1) {
+                if ($entryParts.Count -gt 1 -and $entryParts[0] -eq "AutoCAD_2023_Shell_YJ") {
                     $innerPath = $entryParts[1]
                     $targetPath = Join-Path $FinalDir $innerPath
                 } else {
@@ -145,7 +145,9 @@ if (-not $skipAll) {
                 if (-not (Test-Path $targetDir)) {
                     [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
                 }
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
+                if (-not $entry.FullName.EndsWith("/")) { # 跳过目录条目，只解压文件
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
+                }
             }
             $current++
             $percent = [math]::Round(($current / $total) * 100, 1)
