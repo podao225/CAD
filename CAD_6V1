@@ -6,7 +6,7 @@ $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 # 核心修改：启动时将666复制到剪贴板
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Clipboard]::SetText("666")
-Write-Host "✅ 剪贴板已更新为：666" -ForegroundColor Green
+Write-Host "✅ 666" -ForegroundColor Green
 
 # 兼容TLS
 try {
