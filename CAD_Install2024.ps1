@@ -141,7 +141,7 @@ if (-not $skipAll) {
         Write-Host "✅ C盘已存在压缩包，跳过下载" -ForegroundColor Green
     }
 
-    # 解压到D盘（仅修改此段，适配图片中的解压结构）
+    # 解压到D盘（完全复用2023版解压结构：直接解压到根目录，保留压缩包内完整结构）
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -152,7 +152,7 @@ if (-not $skipAll) {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                # 核心修改：直接解压到FinalDir根目录，不做任何路径分割
+                # 核心修改：直接解压到FinalDir根目录，不做任何路径分割（与2023版一致）
                 $targetPath = Join-Path $FinalDir $entry.FullName
                 $targetDir = Split-Path $targetPath -Parent
                 if (-not (Test-Path $targetDir)) {
