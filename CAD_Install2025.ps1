@@ -205,20 +205,27 @@ try {
     Write-Host "🔄 正在启动 AutoCAD 2025 安装，请耐心等待安装完成..." -ForegroundColor Cyan
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
-    # 修改：等待Installer.exe进程结束 且 D:\Autodesk\AutoCAD 2025中大于800个项目
+    # 修改：先等待Installer.exe进程结束，再检测D:\Autodesk\AutoCAD 2025一级文件夹数量≥600
+    Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
+    # 第一步：等待Installer.exe进程完全结束
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
-        # 检测2025目录文件数量
-        $cad2024Dir = "D:\Autodesk\AutoCAD 2025"
-        $fileCount = 0
-        if (Test-Path $cad2024Dir -PathType Container) {
-            $fileCount = (Get-ChildItem -Path $cad2024Dir -Recurse -ErrorAction SilentlyContinue).Count
-        }
-        Write-Host "`r🔍 安装检测：Installer进程=$($installerProcess -ne $null) | 2025目录文件数=$fileCount" -NoNewline -ForegroundColor Cyan
-    } while ($installerProcess -ne $null -or $fileCount -le 800)
-    Write-Host "" # 换行
+    } while ($installerProcess -ne $null)
 
+    # 第二步：检测目标目录一级文件夹数量（仅文件夹，不递归，阈值600）
+    $cad2025Dir = "D:\Autodesk\AutoCAD 2025"
+    $folderCount = 0
+    do {
+        Start-Sleep -Seconds 5
+        $folderCount = 0
+        if (Test-Path $cad2025Dir -PathType Container) {
+            # -Directory：仅统计文件夹；-Recurse:$false：仅一级目录，不包含子文件夹
+            $folderCount = (Get-ChildItem -Path $cad2025Dir -Directory -Recurse:$false -ErrorAction SilentlyContinue).Count
+        }
+    } while ($folderCount -le 600)
+
+    Write-Host "✅ 安装检测完成" -ForegroundColor Green
     Start-Sleep -Seconds 3
 
     Write-Host "`n🎉 安装完成！" -ForegroundColor Green
