@@ -229,70 +229,45 @@ try {
     Write-Host "🔄 正在启动 AutoCAD 2025 安装，请耐心等待安装完成..." -ForegroundColor Cyan
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
-    # 第一步：先等待Installer.exe进程完全结束（静默等待，无提示）
+    # 第一步：等待Installer.exe进程完全结束（静默等待，无提示）
     $installerWaitCount = 0
     $maxInstallerWait = 360  # 最多等待30分钟（60*5秒）
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
         $installerWaitCount++
+        
         # 超时保护：防止进程一直存在导致卡死
         if ($installerWaitCount -ge $maxInstallerWait) {
-            Write-Host "`n⚠️ Installer进程等待超时，强制继续" -ForegroundColor Yellow
+            Write-Host "`n⚠️ Installer进程等待超时，强制继续检测" -ForegroundColor Yellow
             break
         }
     } while ($installerProcess -ne $null)
 
-    # 进程结束后显示检测提示，开始检测注册表验证AutoCAD 2025安装状态
+    # 进程结束后显示检测提示，仅检测目标目录是否存在acad.exe
     Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
     $cad2025Installed = $false
-    $regWaitCount = 0
-    $maxRegWait = 240  # 最多等待20分钟（48*5秒）
-    # AutoCAD 2025 注册表检测（多维度）
-    $regCheckItems = @(
-        # 主版本注册表
-        @{ Path = "HKLM:\SOFTWARE\Autodesk\AutoCAD\R29.0"; Type = "Path" },
-        # 32位兼容注册表
-        @{ Path = "HKLM:\SOFTWARE\WOW6432Node\Autodesk\AutoCAD\R29.0"; Type = "Path" },
-        # 安装位置注册表
-        @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7D2F3875-0208-0000-0000-0000000FF1CE}"; Type = "Path" },
-        # 产品信息注册表
-        @{ Path = "HKLM:\SOFTWARE\Autodesk\Inventor\RegistryVersion29.0"; Type = "Path" }
-    )
+    $fileWaitCount = 0
+    $maxFileWait = 240  # 最多等待20分钟（48*5秒）
 
-    # 第二步：循环检测注册表，确认2025已安装（带超时保护）
+    # 第二步：仅检测$TargetAcadDir中是否存在acad.exe
     do {
         Start-Sleep -Seconds 5
-        $regWaitCount++
+        $fileWaitCount++
         
-        # 遍历所有检测项
-        foreach ($item in $regCheckItems) {
-            if (Test-Path $item.Path -ErrorAction SilentlyContinue) {
-                $cad2025Installed = $true
-                break
-            }
+        # 核心检测：目标目录是否存在acad.exe文件
+        if (Test-Path $TargetAcadExe -PathType Leaf) {
+            $cad2025Installed = $true
         }
 
-        # 超时保护：防止注册表检测不到导致卡死
-        if ($regWaitCount -ge $maxRegWait) {
-            Write-Host "`n⚠️ 注册表检测超时，确认安装目录是否存在" -ForegroundColor Yellow
-            # 备用检测：检查安装目录是否存在且有足够文件
-            if (Test-Path $TargetAcadDir -PathType Container) {
-                $dirFiles = (Get-ChildItem -Path $TargetAcadDir -Recurse -ErrorAction SilentlyContinue).Count
-                if ($dirFiles -gt 500) {  # 只要目录有超过500个文件，判定为安装完成
-                    $cad2025Installed = $true
-                    Write-Host "✅ 检测到安装目录文件数达标，判定安装完成" -ForegroundColor Green
-                }
-            }
-            if (-not $cad2025Installed) {
-                Write-Host "`n❌ 安装检测超时，可能安装未完成" -ForegroundColor Red
-                # 询问用户是否继续
-                $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
-                if ($userChoice -eq "Y" -or $userChoice -eq "y") {
-                    $cad2025Installed = $true
-                } else {
-                    exit 1
-                }
+        # 超时保护：防止文件一直不存在导致卡死
+        if ($fileWaitCount -ge $maxFileWait) {
+            Write-Host "`n❌ 检测超时：$TargetAcadExe 文件未找到" -ForegroundColor Red
+            $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
+            if ($userChoice -eq "Y" -or $userChoice -eq "y") {
+                $cad2025Installed = $true
+            } else {
+                exit 1
             }
         }
     } while (-not $cad2025Installed)
