@@ -4,10 +4,10 @@ $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
 # 2. 兼容TLS
 try {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 }
 catch {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType::Tls
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
 }
 
 # 3. 强制管理员运行
