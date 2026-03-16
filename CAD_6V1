@@ -379,8 +379,8 @@ function Install-CAD {
         }
         catch {
             Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red
-            Read-Host "按任意键返回版本选择菜单"
-            return
+            Read-Host "按任意键退出程序"
+            exit 0
         }
 
         # 5. 下载安装包
@@ -394,8 +394,8 @@ function Install-CAD {
             }
             catch {
                 Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red
-                Read-Host "按任意键返回版本选择菜单"
-                return
+                Read-Host "按任意键退出程序"
+                exit 0
             }
         }
         else {
@@ -410,8 +410,8 @@ function Install-CAD {
         }
         catch {
             Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red
-            Read-Host "按任意键返回版本选择菜单"
-            return
+            Read-Host "按任意键退出程序"
+            exit 0
         }
     }
 
@@ -419,20 +419,20 @@ function Install-CAD {
     Write-Host "`n🔍 AutoCAD $version安装前二次验证..." -ForegroundColor Cyan
     if (-not (Test-Path $ImageDir -PathType Container)) {
         Write-Host "❌ $($VersionConfig.ImageDirName)文件夹不存在" -ForegroundColor Red
-        Read-Host "按任意键返回版本选择菜单"
-        return
+        Read-Host "按任意键退出程序"
+        exit 0
     }
     $imageItems = Get-ChildItem -Path $ImageDir -Recurse -ErrorAction SilentlyContinue
     if ($imageItems -eq $null -or $imageItems.Count -eq 0) {
         Write-Host "❌ $($VersionConfig.ImageDirName)文件夹为空" -ForegroundColor Red
-        Read-Host "按任意键返回版本选择菜单"
-        return
+        Read-Host "按任意键退出程序"
+        exit 0
     }
     if (-not (Test-Path $VersionConfig.InstallFilePath)) {
         $installFileName = if ($VersionConfig.IsBatInstall) { $VersionConfig.BatFileName } else { "666.lnk" }
         Write-Host "❌ 未找到安装文件 $installFileName" -ForegroundColor Red
-        Read-Host "按任意键返回版本选择菜单"
-        return
+        Read-Host "按任意键退出程序"
+        exit 0
     }
     Write-Host "✅ AutoCAD $version所有验证通过，开始安装" -ForegroundColor Green
 
@@ -476,8 +476,8 @@ function Install-CAD {
                     if ($userChoice -eq "Y" -or $userChoice -eq "y") {
                         $cadInstalled = $true
                     } else {
-                        Read-Host "按任意键返回版本选择菜单"
-                        return
+                        Read-Host "按任意键退出程序"
+                        exit 0
                     }
                 }
             } while (-not $cadInstalled)
@@ -528,11 +528,12 @@ function Install-CAD {
     }
     catch {
         Write-Host "`n❌ AutoCAD $version 安装/激活失败：$($_.Exception.Message)" -ForegroundColor Red
-        Read-Host "按任意键返回版本选择菜单"
-        return
+        Read-Host "按任意键退出程序"
+        exit 0
     }
 
-    Read-Host "`nAutoCAD $version 安装流程结束，按任意键返回版本选择菜单"
+    Read-Host "`nAutoCAD $version 安装流程结束，按任意键退出程序"
+    exit 0
 }
 
 # ========== 界面函数：版本选择菜单 ==========
@@ -556,47 +557,30 @@ function Show-VersionMenu {
 
 # ========== 主程序入口 ==========
 function Main {
-    while ($true) {
-        # 显示版本菜单
-        $versionList = Show-VersionMenu
-        $choice = Read-Host "请输入选项编号"
+    # 显示版本菜单（仅显示一次，移除循环）
+    $versionList = Show-VersionMenu
+    $choice = Read-Host "请输入选项编号"
 
-        # 验证输入
-        if (-not [int]::TryParse($choice, [ref]$null)) {
-            Write-Host "❌ 输入无效，请输入数字！" -ForegroundColor Red
-            Read-Host "按任意键重新选择"
-            continue
-        }
+    # 验证输入
+    if (-not [int]::TryParse($choice, [ref]$null)) {
+        Write-Host "❌ 输入无效，请输入数字！" -ForegroundColor Red
+        Read-Host "按任意键退出程序"
+        exit 0
+    }
 
-        $choiceInt = [int]$choice
-        if ($choiceInt -eq 0) {
-            Write-Host "`n👋 退出程序，感谢使用！" -ForegroundColor Cyan
-            
-            # 脚本自删除（可选：取消注释启用）
-            <#
-            $scriptPath = $MyInvocation.MyCommand.Definition
-            if (Test-Path $scriptPath -PathType Leaf) {
-                try {
-                    Remove-Item $scriptPath -Force
-                    Write-Host "🗑️ 已自动删除脚本文件" -ForegroundColor Green
-                }
-                catch {
-                    Write-Host "⚠️ 脚本自删除失败：$($_.Exception.Message)" -ForegroundColor Yellow
-                }
-            }
-            #>
-            
-            exit 0
-        }
-        elseif ($choiceInt -ge 1 -and $choiceInt -le $versionList.Count) {
-            $selectedVersion = $versionList[$choiceInt - 1]
-            Install-CAD -VersionConfig $CADVersionsConfig[$selectedVersion]
-        }
-        else {
-            Write-Host "❌ 选项不存在，请重新选择！" -ForegroundColor Red
-            Read-Host "按任意键重新选择"
-            continue
-        }
+    $choiceInt = [int]$choice
+    if ($choiceInt -eq 0) {
+        Write-Host "`n👋 退出程序，感谢使用！" -ForegroundColor Cyan
+        exit 0
+    }
+    elseif ($choiceInt -ge 1 -and $choiceInt -le $versionList.Count) {
+        $selectedVersion = $versionList[$choiceInt - 1]
+        Install-CAD -VersionConfig $CADVersionsConfig[$selectedVersion]
+    }
+    else {
+        Write-Host "❌ 选项不存在，请重新选择！" -ForegroundColor Red
+        Read-Host "按任意键退出程序"
+        exit 0
     }
 }
 
