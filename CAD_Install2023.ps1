@@ -17,7 +17,7 @@ if (-not $isAdmin) {
     exit
 }
 
-# 4. 双盘空间校验：C盘≥4GB，D盘≥10GB
+# 4. 双盘空间校验：C盘≥2GB，D盘≥10GB
 function Check-DiskSpace {
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
     $dDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
@@ -122,7 +122,7 @@ if (-not $skipAll) {
         Write-Host "✅ C盘已存在压缩包，跳过下载" -ForegroundColor Green
     }
 
-    # 解压到D盘
+    # 解压到D盘（仅修改此段，适配图片中的解压结构）
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -133,18 +133,16 @@ if (-not $skipAll) {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                $entryParts = $entry.FullName -split '[\\/]'
-                if ($entryParts.Count -gt 1) {
-                    $innerPath = $entryParts[1..($entryParts.Count-1)] -join '\'
-                    $targetPath = Join-Path $FinalDir $innerPath
-                } else {
-                    $targetPath = Join-Path $FinalDir $entry.FullName
-                }
+                # 核心修改：直接解压到FinalDir根目录，不做任何路径分割
+                $targetPath = Join-Path $FinalDir $entry.FullName
                 $targetDir = Split-Path $targetPath -Parent
                 if (-not (Test-Path $targetDir)) {
                     [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
                 }
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
+                # 仅解压文件（跳过目录条目，避免重复创建目录）
+                if (-not $entry.FullName.EndsWith("/")) {
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
+                }
             }
             $current++
             $percent = [math]::Round(($current / $total) * 100, 1)
