@@ -17,7 +17,7 @@ if (-not $isAdmin) {
     exit
 }
 
-# 4. 双盘空间校验：C盘≥2GB，D盘≥10GB
+# 4. 双盘空间校验：C盘≥3GB，D盘≥10GB
 function Check-DiskSpace {
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
     $dDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
@@ -28,7 +28,7 @@ function Check-DiskSpace {
     $cFreeGB = [math]::Round($cDrive.AvailableFreeSpace / 1GB, 1)
     $dFreeGB = [math]::Round($dDrive.AvailableFreeSpace / 1GB, 1)
 
-    if ($cFreeGB -lt 2) { throw "C盘空间不足2GB（需存放压缩包）" }
+    if ($cFreeGB -lt 3) { throw "C盘空间不足3GB（需存放压缩包）" }
     if ($dFreeGB -lt 10) { throw "D盘空间不足10GB（安装程序）" }
 
     return @{ C = $cFreeGB; D = $dFreeGB }
