@@ -17,6 +17,13 @@ if (-not $isAdmin) {
     exit
 }
 
+# 新增：安装前执行注册表清理+重启资源管理器
+Write-Host "`n🧹 正在清理系统托盘缓存..." -ForegroundColor Cyan
+reg delete "HKEY_CLASSES_ROOT\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify" /v IconStreams /f
+reg delete "HKEY_CLASSES_ROOT\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify" /v PastIconsStream /f
+taskkill /f /im explorer.exe&&start explorer.exe
+Write-Host "✅ 系统托盘缓存清理完成" -ForegroundColor Green
+
 # 4. 双盘空间校验：C盘≥4GB，D盘≥10GB
 function Check-DiskSpace {
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
@@ -186,11 +193,19 @@ try {
     Write-Host "🔄 正在启动 AutoCAD 2025 安装，请耐心等待安装完成..." -ForegroundColor Cyan
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
-    # 循环等待 Installer.exe 进程结束
+    # 修改：等待Installer.exe进程结束 且 D:\Autodesk\AutoCAD 2025中大于800个项目
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
-    } while ($installerProcess -ne $null)
+        # 检测2025目录文件数量
+        $cad2024Dir = "D:\Autodesk\AutoCAD 2025"
+        $fileCount = 0
+        if (Test-Path $cad2024Dir -PathType Container) {
+            $fileCount = (Get-ChildItem -Path $cad2024Dir -Recurse -ErrorAction SilentlyContinue).Count
+        }
+        Write-Host "`r🔍 安装检测：Installer进程=$($installerProcess -ne $null) | 2025目录文件数=$fileCount" -NoNewline -ForegroundColor Cyan
+    } while ($installerProcess -ne $null -or $fileCount -le 800)
+    Write-Host "" # 换行
 
     Start-Sleep -Seconds 3
 
