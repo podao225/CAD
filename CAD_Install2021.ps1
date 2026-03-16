@@ -17,6 +17,25 @@ if (-not $isAdmin) {
     exit
 }
 
+# 新增：安装前清理Windows Update重启项（通过临时BAT文件管理员运行）
+Write-Host "`n🧹 正在清理Windows Update重启项..." -ForegroundColor Cyan
+# 1. 定义临时BAT文件路径
+$tempBatPath = Join-Path $env:TEMP "CleanWU Reboot.bat"
+# 2. 写入BAT文件内容
+@"
+@echo off
+:: 重启修复 - 清理Windows Update强制重启项
+reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" /f
+:: 运行完成
+"@ | Out-File -FilePath $tempBatPath -Encoding ASCII
+# 3. 管理员身份运行BAT文件
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c ""$tempBatPath""" -Verb RunAs -Wait
+# 4. 删除临时BAT文件
+if (Test-Path $tempBatPath) {
+    Remove-Item $tempBatPath -Force
+}
+Write-Host "✅ Windows Update重启项清理完成" -ForegroundColor Green
+
 # 4. 双盘空间校验：C盘≥3GB，D盘≥10GB
 function Check-DiskSpace {
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
