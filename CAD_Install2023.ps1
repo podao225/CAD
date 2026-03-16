@@ -4,10 +4,10 @@ $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
 # 2. 兼容TLS
 try {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType::Tls12
 }
 catch {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType::Tls
 }
 
 # 3. 强制管理员运行
@@ -17,7 +17,7 @@ if (-not $isAdmin) {
     exit
 }
 
-# 4. 双盘空间校验：C盘≥2GB，D盘≥10GB
+# 4. 双盘空间校验：C盘≥4GB，D盘≥10GB
 function Check-DiskSpace {
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
     $dDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
@@ -28,22 +28,22 @@ function Check-DiskSpace {
     $cFreeGB = [math]::Round($cDrive.AvailableFreeSpace / 1GB, 1)
     $dFreeGB = [math]::Round($dDrive.AvailableFreeSpace / 1GB, 1)
 
-    if ($cFreeGB -lt 2) { throw "C盘空间不足2GB（需存放压缩包）" }
+    if ($cFreeGB -lt 4) { throw "C盘空间不足4GB（需存放压缩包）" }
     if ($dFreeGB -lt 10) { throw "D盘空间不足10GB（安装程序）" }
 
     return @{ C = $cFreeGB; D = $dFreeGB }
 }
 
-# 5. 核心配置（适配2023版：Img→image、666.lnk→Install AutoCAD 2023_1.bat）
+# 5. 核心配置（适配实际解压结构）
 $DownloadUrl  = "http://115.191.18.103:5244/d/%E7%A7%BB%E5%8A%A8/CAD_Shell/AutoCAD_2023_Shell_YJ.zip"
-$ZipPath      = Join-Path $env:TEMP "AutoCAD_2023_Shell_YJ.zip"  # C盘%temp%下载
-$FinalDir     = "D:\AutoCAD_2023_Shell_YJ"                      # D盘固定解压目录
-$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2023_1.bat" # 替换666.lnk为指定bat文件
-$ImageDir     = Join-Path $FinalDir "image"                      # Img→image
-$logPath      = Join-Path $FinalDir "install_log.txt"            # 日志保存到解压文件夹
-$SourceAcadExe = Join-Path $FinalDir "acad.exe"                  # 源acad.exe路径
-$TargetAcadDir = "D:\Autodesk\AutoCAD 2023"                      # 目标替换目录
-$TargetAcadExe = Join-Path $TargetAcadDir "acad.exe"             # 目标acad.exe路径
+$ZipPath      = Join-Path $env:TEMP "AutoCAD_2023_Shell_YJ.zip"
+$FinalDir     = "D:\AutoCAD_2023_Shell_YJ"
+$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2023_1.bat"  # 直接在FinalDir下
+$ImageDir     = Join-Path $FinalDir "image"                      # 直接在FinalDir下
+$logPath      = Join-Path $FinalDir "install_log.txt"
+$SourceAcadExe = Join-Path $FinalDir "acad.exe"                  # 直接在FinalDir下
+$TargetAcadDir = "D:\Autodesk\AutoCAD 2023"
+$TargetAcadExe = Join-Path $TargetAcadDir "acad.exe"
 
 # 6. 优先检测D盘是否已有完整安装文件
 Write-Host "`n🔍 磁盘检测中..." -ForegroundColor Cyan
@@ -71,14 +71,14 @@ if (-not $skipAll) {
         exit 1
     }
 
-    Write-Host "`n❌ D盘未检测到完整文件，开始下载" -ForegroundColor Cyan
+    Write-Host "`n❌ 未检测到完整文件，开始下载" -ForegroundColor Cyan
     
     if (-not (Test-Path $ZipPath -PathType Leaf)) {
         Write-Host "`n📥 正在下载安装包（耐心等待）..." -ForegroundColor Yellow
         
         $job = Start-Job -ScriptBlock {
             param($url, $path)
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocolType::Tls12
             $webClient = New-Object System.Net.WebClient
             $webClient.Headers.Add("User-Agent", "Mozilla/5.0")
             $webClient.DownloadFile($url, $path)
@@ -87,7 +87,7 @@ if (-not $skipAll) {
 
         $startTime = Get-Date
         $lastSize = 0
-        $totalSizeEst = 1.88 * 1GB
+        $totalSizeEst = 5.7 * 1GB  # 更新为实际压缩包大小
 
         while ($job.State -eq "Running") {
             if (Test-Path $ZipPath -PathType Leaf) {
@@ -122,7 +122,7 @@ if (-not $skipAll) {
         Write-Host "✅ C盘已存在压缩包，跳过下载" -ForegroundColor Green
     }
 
-    # 解压到D盘
+    # 解压到D盘（适配实际结构：直接解压到FinalDir，不再嵌套子目录）
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -133,9 +133,10 @@ if (-not $skipAll) {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                $entryParts = $entry.FullName -split '[\\/]'
+                # 直接去掉顶层目录，将内容解压到FinalDir
+                $entryParts = $entry.FullName -split '[\\/]', 2  # 只分割一次，去掉顶层目录
                 if ($entryParts.Count -gt 1) {
-                    $innerPath = $entryParts[1..($entryParts.Count-1)] -join '\'
+                    $innerPath = $entryParts[1]
                     $targetPath = Join-Path $FinalDir $innerPath
                 } else {
                     $targetPath = Join-Path $FinalDir $entry.FullName
@@ -150,7 +151,7 @@ if (-not $skipAll) {
             $percent = [math]::Round(($current / $total) * 100, 1)
             Write-Host "`r解压进度：$percent% ($current/$total)" -NoNewline
         }
-        $zipFile.Dispose()  # 释放压缩包句柄
+        $zipFile.Dispose()
         Write-Host "`n✅ 解压完成！" -ForegroundColor Green
         
         # 自动删除C盘压缩包
@@ -198,25 +199,22 @@ try {
         Write-Host "🗑️ 已自动删除安装批处理文件" -ForegroundColor Green
     }
 
-    # 新增：复制acad.exe到目标目录并替换，然后删除源文件
+    # 复制acad.exe到目标目录并替换，然后删除源文件
     Write-Host "`n📤 开始复制替换acad.exe..." -ForegroundColor Cyan
     if (Test-Path $SourceAcadExe -PathType Leaf) {
-        # 检查目标目录是否存在，不存在则创建
         if (-not (Test-Path $TargetAcadDir -PathType Container)) {
             New-Item -Path $TargetAcadDir -ItemType Directory -Force | Out-Null
             Write-Host "📁 已创建目标目录：$TargetAcadDir" -ForegroundColor Yellow
         }
         
-        # 复制并覆盖（强制替换）
         Copy-Item -Path $SourceAcadExe -Destination $TargetAcadExe -Force
-        Write-Host "✅ 已将 $SourceAcadExe 复制并覆盖到 $TargetAcadExe" -ForegroundColor Green
+        Write-Host "✅ 已将 acad.exe 复制并覆盖到 $TargetAcadDir" -ForegroundColor Green
 
-        # 删除源文件
         Remove-Item -Path $SourceAcadExe -Force
-        Write-Host "🗑️ 已删除源文件：$SourceAcadExe" -ForegroundColor Green
+        Write-Host "🗑️ 已删除源文件 acad.exe" -ForegroundColor Green
     }
     else {
-        Write-Host "⚠️ 未找到源文件：$SourceAcadExe，跳过复制替换" -ForegroundColor Yellow
+        Write-Host "⚠️ 未找到源文件 acad.exe，跳过复制替换" -ForegroundColor Yellow
     }
 }
 catch {
