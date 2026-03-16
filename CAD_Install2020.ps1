@@ -68,7 +68,7 @@ if (-not $skipAll) {
         exit 1
     }
 
-    Write-Host "`n❌ D盘未检测到完整文件，开始下载" -ForegroundColor Cyan
+    Write-Host "`n❌ 未检测到完整文件，开始下载" -ForegroundColor Cyan
     
     if (-not (Test-Path $ZipPath -PathType Leaf)) {
         Write-Host "`n📥 正在下载安装包（耐心等待）..." -ForegroundColor Yellow
