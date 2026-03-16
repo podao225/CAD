@@ -200,30 +200,53 @@ if (-not (Test-Path $SetupBatPath)) {
 }
 Write-Host "✅ 所有验证通过，开始安装" -ForegroundColor Green
 
-# 8. 安装（等待Installer.exe进程结束）
+# 8. 安装
 try {
     Write-Host "🔄 正在启动 AutoCAD 2026 安装，请耐心等待安装完成..." -ForegroundColor Cyan
     $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupBatPath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
 
-    # 修改：先等待Installer.exe进程结束，再检测D:\Autodesk\AutoCAD 2026一级文件夹数量≥600
-    Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
-    # 第一步：等待Installer.exe进程完全结束
+    # 第一步：等待Installer.exe进程完全结束（静默等待，无提示）
+    $installerWaitCount = 0
+    $maxInstallerWait = 360  # 最多等待30分钟（60*5秒）
     do {
         Start-Sleep -Seconds 5
         $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
+        $installerWaitCount++
+        
+        # 超时保护：防止进程一直存在导致卡死
+        if ($installerWaitCount -ge $maxInstallerWait) {
+            Write-Host "`n⚠️ Installer进程等待超时，强制继续检测" -ForegroundColor Yellow
+            break
+        }
     } while ($installerProcess -ne $null)
 
-    # 第二步：检测目标目录一级文件夹数量（仅文件夹，不递归，阈值600）
-    $cad2026Dir = "D:\Autodesk\AutoCAD 2026"
-    $folderCount = 0
+    # 进程结束后显示检测提示，仅检测目标目录是否存在acad.exe
+    Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
+    $cad2026Installed = $false
+    $fileWaitCount = 0
+    $maxFileWait = 240  # 最多等待20分钟（48*5秒）
+
+    # 第二步：仅检测$TargetAcadDir中是否存在acad.exe
     do {
         Start-Sleep -Seconds 5
-        $folderCount = 0
-        if (Test-Path $cad2026Dir -PathType Container) {
-            # -Directory：仅统计文件夹；-Recurse:$false：仅一级目录，不包含子文件夹
-            $folderCount = (Get-ChildItem -Path $cad2026Dir -Directory -Recurse:$false -ErrorAction SilentlyContinue).Count
+        $fileWaitCount++
+        
+        # 核心检测：目标目录是否存在acad.exe文件
+        if (Test-Path $TargetAcadExe -PathType Leaf) {
+            $cad2026Installed = $true
         }
-    } while ($folderCount -le 600)
+
+        # 超时保护：防止文件一直不存在导致卡死
+        if ($fileWaitCount -ge $maxFileWait) {
+            Write-Host "`n❌ 检测超时：$TargetAcadExe 文件未找到" -ForegroundColor Red
+            $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
+            if ($userChoice -eq "Y" -or $userChoice -eq "y") {
+                $cad2026Installed = $true
+            } else {
+                exit 1
+            }
+        }
+    } while (-not $cad2026Installed)
 
     Write-Host "✅ 安装检测完成" -ForegroundColor Green
     Start-Sleep -Seconds 3
@@ -236,14 +259,19 @@ try {
         Write-Host "🗑️ 已自动打扫安装批处理文件" -ForegroundColor Green
     }
 
-    # 激活步骤
     Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
     if (Test-Path $SourceAcadExe -PathType Leaf) {
+        # 确保目标目录存在
         if (-not (Test-Path $TargetAcadDir -PathType Container)) {
             New-Item -Path $TargetAcadDir -ItemType Directory -Force | Out-Null
             Write-Host "📁 已创建目标目录：$TargetAcadDir" -ForegroundColor Yellow
         }
         
+        # 备份原文件（可选）
+        if (Test-Path $TargetAcadExe -PathType Leaf) {
+            Copy-Item -Path $TargetAcadExe -Destination "$TargetAcadExe.bak" -Force -ErrorAction SilentlyContinue
+        }
+        # 执行替换
         Copy-Item -Path $SourceAcadExe -Destination $TargetAcadExe -Force
         Write-Host "✅ 已激活完成" -ForegroundColor Green
 
@@ -256,16 +284,20 @@ try {
 }
 catch {
     Write-Host "`n❌ 安装/文件替换失败：$($_.Exception.Message)" -ForegroundColor Red
+    Read-Host "按任意键退出"
+    exit 1
 }
 
 # 9. 脚本自删除
 $scriptPath = $MyInvocation.MyCommand.Definition
 if (Test-Path $scriptPath -PathType Leaf) {
-    Remove-Item $scriptPath -Force
-    Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
-}
-
-Read-Host "`n所有操作结束，按任意键退出"
+    try {
+        Remove-Item $scriptPath -Force
+        Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "⚠️ 脚本自删除失败：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 Read-Host "`n所有操作结束，按任意键退出"
