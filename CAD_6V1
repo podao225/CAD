@@ -1,32 +1,26 @@
 # ===================== AutoCAD 六合一安装程序 =====================
-# 兼容编码
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
-# 核心新增：清空剪贴板内容
+# 清空剪贴板
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Clipboard]::Clear()
-Write-Host "✅ 已清空剪贴板内容" -ForegroundColor Green
 
-# 兼容TLS（修复旧版PowerShell报错）
+# TLS 兼容（和你单个脚本完全一致）
 try {
-    $currentProtocol = [Net.ServicePointManager]::SecurityProtocol
-    if (-not $currentProtocol.HasFlag([Net.SecurityProtocolType]::Tls12)) {
-        [Net.ServicePointManager]::SecurityProtocol = $currentProtocol -bor [Net.SecurityProtocolType]::Tls12
-    }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 }
 catch {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
 }
 
-# 强制管理员运行
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
+# 强制管理员
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process powershell.exe "-ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
     exit
 }
 
-# ========== 核心配置：六版本差异化参数 ==========
+# ========== 版本配置（和你单个脚本完全一致） ==========
 $CADVersionsConfig = @{
     "2020" = @{
         CMinSpaceGB      = 2
@@ -38,10 +32,6 @@ $CADVersionsConfig = @{
         ImageDirName     = "Img"
         IsBatInstall     = $false
         HasActivation    = $false
-        BatFileName      = $null
-        SourceAcadExe    = $null
-        TargetAcadDir    = $null
-        TargetAcadExe    = $null
         CleanWuBatName   = "CleanWU Reboot.bat"
         ShowSpaceDetail  = $false
         DownloadErrorCheck = $false
@@ -56,10 +46,6 @@ $CADVersionsConfig = @{
         ImageDirName     = "Img"
         IsBatInstall     = $false
         HasActivation    = $false
-        BatFileName      = $null
-        SourceAcadExe    = $null
-        TargetAcadDir    = $null
-        TargetAcadExe    = $null
         CleanWuBatName   = "CleanWU Reboot.bat"
         ShowSpaceDetail  = $false
         DownloadErrorCheck = $false
@@ -74,7 +60,6 @@ $CADVersionsConfig = @{
         ImageDirName     = "image"
         IsBatInstall     = $true
         HasActivation    = $true
-        BatFileName      = "Install AutoCAD 2023_1.bat"
         SourceAcadExe    = Join-Path "D:\AutoCAD_2023_Shell_YJ" "acad.exe"
         TargetAcadDir    = "D:\Autodesk\AutoCAD 2023"
         TargetAcadExe    = Join-Path "D:\Autodesk\AutoCAD 2023" "acad.exe"
@@ -92,7 +77,6 @@ $CADVersionsConfig = @{
         ImageDirName     = "image"
         IsBatInstall     = $true
         HasActivation    = $true
-        BatFileName      = "Install AutoCAD 2024_1.bat"
         SourceAcadExe    = Join-Path "D:\AutoCAD_2024_Shell_YJ" "acad.exe"
         TargetAcadDir    = "D:\Autodesk\AutoCAD 2024"
         TargetAcadExe    = Join-Path "D:\Autodesk\AutoCAD 2024" "acad.exe"
@@ -110,7 +94,6 @@ $CADVersionsConfig = @{
         ImageDirName     = "image"
         IsBatInstall     = $true
         HasActivation    = $true
-        BatFileName      = "Install AutoCAD 2025.bat"
         SourceAcadExe    = Join-Path "D:\AutoCAD_2025_Shell_YJ" "acad.exe"
         TargetAcadDir    = "D:\Autodesk\AutoCAD 2025"
         TargetAcadExe    = Join-Path "D:\Autodesk\AutoCAD 2025" "acad.exe"
@@ -128,7 +111,6 @@ $CADVersionsConfig = @{
         ImageDirName     = "image"
         IsBatInstall     = $true
         HasActivation    = $true
-        BatFileName      = "Install AutoCAD 2026.bat"
         SourceAcadExe    = Join-Path "D:\AutoCAD_2026_Shell_YJ" "acad.exe"
         TargetAcadDir    = "D:\Autodesk\AutoCAD 2026"
         TargetAcadExe    = Join-Path "D:\Autodesk\AutoCAD 2026" "acad.exe"
@@ -138,150 +120,88 @@ $CADVersionsConfig = @{
     }
 }
 
-# ========== 功能函数：清理Windows Update重启项 ==========
+# ========== 功能函数：清理WU重启项 ==========
 function Clear-WURebootItem {
-    param(
-        [string]$BatFileName
-    )
+    param([string]$BatFileName)
     Write-Host "`n🧹 正在清理Windows Update重启项..." -ForegroundColor Cyan
     $tempBatPath = Join-Path $env:TEMP $BatFileName
     @"
 @echo off
-:: 重启修复 - 清理Windows Update强制重启项
 reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" /f 2>nul
-:: 运行完成
 "@ | Out-File -FilePath $tempBatPath -Encoding ASCII
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c ""$tempBatPath""" -Verb RunAs -Wait
-    if (Test-Path $tempBatPath) {
-        Remove-Item $tempBatPath -Force
-    }
+    if (Test-Path $tempBatPath) { Remove-Item $tempBatPath -Force }
     Write-Host "✅ Windows Update重启项清理完成" -ForegroundColor Green
 }
 
 # ========== 功能函数：磁盘空间校验 ==========
 function Check-DiskSpace {
-    param(
-        [int]$CMinSpaceGB,
-        [bool]$ShowSpaceDetail
-    )
+    param([int]$CMinSpaceGB, [bool]$ShowSpaceDetail)
     $cDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'C:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
     $dDrive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq [System.IO.DriveType]::Fixed }
-
     if (-not $cDrive) { throw "未检测到C盘" }
     if (-not $dDrive) { throw "未检测到D盘" }
-
     $cFreeGB = [math]::Round($cDrive.AvailableFreeSpace / 1GB, 1)
     $dFreeGB = [math]::Round($dDrive.AvailableFreeSpace / 1GB, 1)
-
     if ($ShowSpaceDetail) {
         if ($cFreeGB -lt $CMinSpaceGB) { throw "C盘空间不足$CMinSpaceGB GB（当前可用：$cFreeGB GB）" }
         if ($dFreeGB -lt 10) { throw "D盘空间不足10GB（当前可用：$dFreeGB GB）" }
-    }
-    else {
+    } else {
         if ($cFreeGB -lt $CMinSpaceGB) { throw "C盘空间不足$CMinSpaceGB GB（需存放压缩包）" }
         if ($dFreeGB -lt 10) { throw "D盘空间不足10GB（安装程序）" }
     }
-
     return @{ C = $cFreeGB; D = $dFreeGB }
 }
 
 # ========== 功能函数：下载安装包 ==========
 function Download-InstallPackage {
-    param(
-        [string]$DownloadUrl,
-        [string]$ZipPath,
-        [double]$TotalSizeEstGB,
-        [bool]$DownloadErrorCheck
-    )
+    param([string]$DownloadUrl, [string]$ZipPath, [double]$TotalSizeEstGB, [bool]$DownloadErrorCheck)
     Write-Host "`n📥 正在下载安装包（耐心等待）..." -ForegroundColor Yellow
-    
     $jobScript = {
         param($url, $path, $checkError)
-        # 修复下载任务内的TLS协议（兼容旧版PowerShell）
         try {
-            $currentProtocol = [Net.ServicePointManager]::SecurityProtocol
-            if (-not $currentProtocol.HasFlag([Net.SecurityProtocolType]::Tls12)) {
-                [Net.ServicePointManager]::SecurityProtocol = $currentProtocol -bor [Net.SecurityProtocolType]::Tls12
-            }
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         }
         catch {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
         }
         $webClient = New-Object System.Net.WebClient
         $webClient.Headers.Add("User-Agent", "Mozilla/5.0")
-        try {
-            $webClient.DownloadFile($url, $path)
-        }
-        catch {
-            if ($checkError) {
-                Write-Error "下载失败：$($_.Exception.Message)"
-            }
-        }
-        finally {
-            $webClient.Dispose()
-        }
+        try { $webClient.DownloadFile($url, $path) }
+        catch { if ($checkError) { Write-Error "下载失败：$($_.Exception.Message)" } }
+        finally { $webClient.Dispose() }
     }
-
     $job = Start-Job -ScriptBlock $jobScript -ArgumentList $DownloadUrl, $ZipPath, $DownloadErrorCheck
-
     $startTime = Get-Date
     $lastSize = 0
     $totalSizeEst = $TotalSizeEstGB * 1GB
-
     while ($job.State -eq "Running") {
         if (Test-Path $ZipPath -PathType Leaf) {
             $currentSize = (Get-Item $ZipPath).Length
-            $currentTime = Get-Date
-            $elapsed = ($currentTime - $startTime).TotalSeconds
+            $elapsed = ((Get-Date) - $startTime).TotalSeconds
             $avgSpeed = if ($elapsed -gt 0) { [math]::Round(($currentSize / 1024) / $elapsed, 1) } else { 0 }
             $downloadedGB = [math]::Round($currentSize / 1GB, 2)
-
-            $remainingSize = $totalSizeEst - $currentSize
-            $remainingSec = if ($avgSpeed -gt 0) { [math]::Round(($remainingSize / 1024) / $avgSpeed, 1) } else { 0 }
-            $remainingMin = [math]::Round($remainingSec / 60, 1)
-            $remainingMin = if ($remainingMin -lt 0.1) { 0.1 } else { $remainingMin }
-
+            $remainingSec = if ($avgSpeed -gt 0) { [math]::Round((($totalSizeEst - $currentSize) / 1024) / $avgSpeed, 1) } else { 0 }
+            $remainingMin = [math]::Max([math]::Round($remainingSec / 60, 1), 0.1)
             Write-Host "`r📦 已下载：$downloadedGB GB | 速度：$avgSpeed KB/s | 剩余时间：$remainingMin 分钟" -NoNewline -ForegroundColor Yellow
             $lastSize = $currentSize
         }
         Start-Sleep -Milliseconds 500
     }
-
-    # 检查下载错误（仅2025/2026版本）
     if ($DownloadErrorCheck) {
         $jobResult = Receive-Job $job -Wait
-        if ($jobResult -match "下载失败") {
-            Remove-Job $job -Force
-            throw $jobResult
-        }
-    }
-    else {
-        Receive-Job $job -Wait | Out-Null
-    }
+        if ($jobResult -match "下载失败") { Remove-Job $job -Force; throw $jobResult }
+    } else { Receive-Job $job -Wait | Out-Null }
     Remove-Job $job -Force
-
-    # 验证压缩包有效性（仅2025/2026版本）
-    if ($DownloadErrorCheck) {
-        if (-not (Test-Path $ZipPath) -or (Get-Item $ZipPath).Length -eq 0) {
-            throw "下载的安装包为空或损坏"
-        }
-    }
-
-    $endTime = Get-Date
-    $totalTime = ($endTime - $startTime).TotalSeconds
+    if ($DownloadErrorCheck -and (-not (Test-Path $ZipPath) -or (Get-Item $ZipPath).Length -eq 0)) { throw "下载的安装包为空或损坏" }
     $finalSize = (Get-Item $ZipPath).Length
-    $avgSpeed = [math]::Round($finalSize / 1024 / $totalTime, 1)
-    $finalGB = [math]::Round($finalSize / 1GB, 2)
-    Write-Host "`n✅ 下载完成！| 总大小：$finalGB GB | 平均速度：$avgSpeed KB/s" -ForegroundColor Green
+    $avgSpeed = [math]::Round($finalSize / 1024 / ((Get-Date) - $startTime).TotalSeconds, 1)
+    Write-Host "`n✅ 下载完成！| 总大小：$([math]::Round($finalSize/1GB,2)) GB | 平均速度：$avgSpeed KB/s" -ForegroundColor Green
 }
 
 # ========== 功能函数：解压安装包 ==========
 function Extract-InstallPackage {
-    param(
-        [string]$ZipPath,
-        [string]$FinalDir,
-        [bool]$IsNewVersion # 是否是2023+版本（需要截断顶层文件夹）
-    )
+    param([string]$ZipPath, [string]$FinalDir, [bool]$IsNewVersion)
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -289,232 +209,121 @@ function Extract-InstallPackage {
         $entries = $zipFile.Entries
         $total = $entries.Count
         $current = 0
-
-        # 确保解压目录存在
-        if (-not (Test-Path $FinalDir)) {
-            New-Item -Path $FinalDir -ItemType Directory -Force | Out-Null
-        }
-
-        # 2023+版本：截断顶层文件夹；2020/2021版本：分割路径
-        $topFolder = ""
-        if ($IsNewVersion) {
-            $topFolder = $entries | Where-Object { $_.FullName -match '^[^/]+/$' } | Select-Object -First 1 -ExpandProperty FullName
-            if (-not $topFolder) { $topFolder = "" }
-        }
-
+        if (-not (Test-Path $FinalDir)) { New-Item -Path $FinalDir -ItemType Directory -Force | Out-Null }
+        $topFolder = if ($IsNewVersion) { $entries | Where-Object { $_.FullName -match '^[^/]+/$' } | Select-Object -First 1 -ExpandProperty FullName } else { "" }
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
                 if ($IsNewVersion) {
-                    # 2023+版本：截断顶层文件夹
-                    $relativePath = if ($entry.FullName.StartsWith($topFolder)) {
-                        $entry.FullName.Substring($topFolder.Length)
-                    } else {
-                        $entry.FullName
-                    }
+                    $relativePath = if ($entry.FullName.StartsWith($topFolder)) { $entry.FullName.Substring($topFolder.Length) } else { $entry.FullName }
                     $targetPath = Join-Path $FinalDir $relativePath
-                }
-                else {
-                    # 2020/2021版本：分割路径
+                } else {
                     $entryParts = $entry.FullName -split '[\\/]'
-                    if ($entryParts.Count -gt 1) {
-                        $innerPath = $entryParts[1..($entryParts.Count-1)] -join '\'
-                        $targetPath = Join-Path $FinalDir $innerPath
-                    } else {
-                        $targetPath = Join-Path $FinalDir $entry.FullName
-                    }
+                    $innerPath = if ($entryParts.Count -gt 1) { $entryParts[1..($entryParts.Count-1)] -join '\' } else { $entry.FullName }
+                    $targetPath = Join-Path $FinalDir $innerPath
                 }
-                
                 $targetDir = Split-Path $targetPath -Parent
-                if (-not (Test-Path $targetDir)) {
-                    [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
-                }
-
-                # 仅解压文件（跳过目录条目）
-                if (-not $entry.FullName.EndsWith("/")) {
-                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
-                }
+                if (-not (Test-Path $targetDir)) { [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null }
+                if (-not $entry.FullName.EndsWith("/")) { [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true) }
             }
             $current++
-            $percent = [math]::Round(($current / $total) * 100, 1)
-            Write-Host "`r解压进度：$percent% ($current/$total)" -NoNewline
+            Write-Host "`r解压进度：$([math]::Round(($current/$total)*100,1))% ($current/$total)" -NoNewline
         }
         $zipFile.Dispose()
         Write-Host "`n✅ 解压完成！" -ForegroundColor Green
-        
-        # 删除压缩包
-        if (Test-Path $ZipPath -PathType Leaf) {
-            Remove-Item $ZipPath -Force
-            Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green
-        }
+        if (Test-Path $ZipPath -PathType Leaf) { Remove-Item $ZipPath -Force; Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green }
     }
-    catch {
-        throw "解压失败：$($_.Exception.Message)"
-    }
+    catch { throw "解压失败：$($_.Exception.Message)" }
 }
 
-# ========== 功能函数：安装+激活（适配不同版本） ==========
+# ========== 核心安装函数（和你单个脚本逻辑完全对齐） ==========
 function Install-CAD {
     param(
-        [hashtable]$VersionConfig
+        [string]$Version,  # ✅ 直接传版本号，彻底解决参数解析问题
+        [hashtable]$Config
     )
-    $version = $VersionConfig.Keys | Where-Object { $CADVersionsConfig[$_] -eq $VersionConfig }
     Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "          开始安装 AutoCAD $version          " -ForegroundColor Cyan
+    Write-Host "          开始安装 AutoCAD $Version          " -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
 
-    # 1. 清理WU重启项
-    Clear-WURebootItem -BatFileName $VersionConfig.CleanWuBatName
+    Clear-WURebootItem -BatFileName $Config.CleanWuBatName
+    $ImageDir = Join-Path $Config.FinalDir $Config.ImageDirName
+    $logPath = Join-Path $Config.FinalDir "install_log.txt"
 
-    # 2. 定义核心路径
-    $ImageDir = Join-Path $VersionConfig.FinalDir $VersionConfig.ImageDirName
-    $logPath = Join-Path $VersionConfig.FinalDir "install_log.txt"
-
-    # 3. 检测是否已有完整安装文件
-    Write-Host "`n🔍 磁盘检测中（AutoCAD $version）..." -ForegroundColor Cyan
-    $installFileExists = Test-Path $VersionConfig.InstallFilePath -PathType Leaf
-    $imageDirExists = Test-Path $ImageDir -PathType Container
+    Write-Host "`n🔍 磁盘检测中（AutoCAD $Version）..." -ForegroundColor Cyan
     $skipAll = $false
-
-    if ($installFileExists -and $imageDirExists) {
+    if (Test-Path $Config.InstallFilePath -PathType Leaf -and (Test-Path $ImageDir -PathType Container)) {
         $imageItems = Get-ChildItem -Path $ImageDir -Recurse -ErrorAction SilentlyContinue
         if ($imageItems -and $imageItems.Count -gt 0) {
-            Write-Host "✅ 检测到AutoCAD $version完整安装文件，跳过下载+解压" -ForegroundColor Green
+            Write-Host "✅ 检测到AutoCAD $Version完整安装文件，跳过下载+解压" -ForegroundColor Green
             $skipAll = $true
         }
     }
 
     if (-not $skipAll) {
-        # 4. 磁盘空间校验
         try {
-            $diskInfo = Check-DiskSpace -CMinSpaceGB $VersionConfig.CMinSpaceGB -ShowSpaceDetail $VersionConfig.ShowSpaceDetail
+            $diskInfo = Check-DiskSpace -CMinSpaceGB $Config.CMinSpaceGB -ShowSpaceDetail $Config.ShowSpaceDetail
             Write-Host "`n🔍 磁盘剩余空间：C盘 $($diskInfo.C) GB | D盘 $($diskInfo.D) GB" -ForegroundColor Cyan
         }
-        catch {
-            Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red
-            Read-Host "按任意键退出程序"
-            exit 0
-        }
+        catch { Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red; Read-Host "按任意键退出程序"; exit 0 }
 
-        # 5. 下载安装包
-        Write-Host "`n❌ 未检测到AutoCAD $version完整文件，开始下载" -ForegroundColor Cyan
-        if (-not (Test-Path $VersionConfig.ZipPath -PathType Leaf)) {
+        if (-not (Test-Path $Config.ZipPath -PathType Leaf)) {
             try {
-                Download-InstallPackage -DownloadUrl $VersionConfig.DownloadUrl `
-                    -ZipPath $VersionConfig.ZipPath `
-                    -TotalSizeEstGB $VersionConfig.TotalSizeEstGB `
-                    -DownloadErrorCheck $VersionConfig.DownloadErrorCheck
+                Download-InstallPackage -DownloadUrl $Config.DownloadUrl -ZipPath $Config.ZipPath -TotalSizeEstGB $Config.TotalSizeEstGB -DownloadErrorCheck $Config.DownloadErrorCheck
             }
-            catch {
-                Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red
-                Read-Host "按任意键退出程序"
-                exit 0
-            }
-        }
-        else {
-            Write-Host "✅ C盘已存在AutoCAD $version压缩包，跳过下载" -ForegroundColor Green
-        }
+            catch { Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red; Read-Host "按任意键退出程序"; exit 0 }
+        } else { Write-Host "✅ C盘已存在AutoCAD $Version压缩包，跳过下载" -ForegroundColor Green }
 
-        # 6. 解压安装包
-        try {
-            Extract-InstallPackage -ZipPath $VersionConfig.ZipPath `
-                -FinalDir $VersionConfig.FinalDir `
-                -IsNewVersion ($version -ge 2023)
-        }
-        catch {
-            Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red
-            Read-Host "按任意键退出程序"
-            exit 0
-        }
+        try { Extract-InstallPackage -ZipPath $Config.ZipPath -FinalDir $Config.FinalDir -IsNewVersion ($Version -ge 2023) }
+        catch { Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red; Read-Host "按任意键退出程序"; exit 0 }
     }
 
-    # 7. 安装前验证
-    Write-Host "`n🔍 AutoCAD $version安装前二次验证..." -ForegroundColor Cyan
-    if (-not (Test-Path $ImageDir -PathType Container)) {
-        Write-Host "❌ $($VersionConfig.ImageDirName)文件夹不存在" -ForegroundColor Red
-        Read-Host "按任意键退出程序"
-        exit 0
+    Write-Host "`n🔍 AutoCAD $Version安装前二次验证..." -ForegroundColor Cyan
+    if (-not (Test-Path $ImageDir -PathType Container) -or -not (Test-Path $Config.InstallFilePath)) {
+        Write-Host "❌ 安装文件缺失" -ForegroundColor Red; Read-Host "按任意键退出程序"; exit 0
     }
-    $imageItems = Get-ChildItem -Path $ImageDir -Recurse -ErrorAction SilentlyContinue
-    if ($imageItems -eq $null -or $imageItems.Count -eq 0) {
-        Write-Host "❌ $($VersionConfig.ImageDirName)文件夹为空" -ForegroundColor Red
-        Read-Host "按任意键退出程序"
-        exit 0
-    }
-    if (-not (Test-Path $VersionConfig.InstallFilePath)) {
-        $installFileName = if ($VersionConfig.IsBatInstall) { $VersionConfig.BatFileName } else { "666.lnk" }
-        Write-Host "❌ 未找到安装文件 $installFileName" -ForegroundColor Red
-        Read-Host "按任意键退出程序"
-        exit 0
-    }
-    Write-Host "✅ AutoCAD $version所有验证通过，开始安装" -ForegroundColor Green
+    Write-Host "✅ AutoCAD $Version所有验证通过，开始安装" -ForegroundColor Green
 
-    # 8. 执行安装
     try {
-        if ($VersionConfig.IsBatInstall) {
-            Write-Host "🔄 正在启动 AutoCAD $version 安装，请耐心等待安装完成..." -ForegroundColor Cyan
-            $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$($VersionConfig.InstallFilePath)"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
-
-            # 等待Installer.exe进程结束（2023+版本）
+        if ($Config.IsBatInstall) {
+            Write-Host "🔄 正在启动 AutoCAD $Version 安装，请耐心等待安装完成..." -ForegroundColor Cyan
+            $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$($Config.InstallFilePath)"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
             $installerWaitCount = 0
-            $maxInstallerWait = 360  # 30分钟超时
             do {
                 Start-Sleep -Seconds 5
                 $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
                 $installerWaitCount++
-                
-                if ($installerWaitCount -ge $maxInstallerWait) {
-                    Write-Host "`n⚠️ Installer进程等待超时，强制继续检测" -ForegroundColor Yellow
-                    break
-                }
+                if ($installerWaitCount -ge 360) { Write-Host "`n⚠️ Installer进程等待超时，强制继续检测" -ForegroundColor Yellow; break }
             } while ($installerProcess -ne $null)
 
-            # 检测acad.exe是否存在（2023+版本）
             Write-Host "🔍 安装检测中..." -ForegroundColor Cyan
             $cadInstalled = $false
             $fileWaitCount = 0
-            $maxFileWait = 240  # 20分钟超时
-
             do {
                 Start-Sleep -Seconds 5
                 $fileWaitCount++
-                
-                if (Test-Path $VersionConfig.TargetAcadExe -PathType Leaf) {
-                    $cadInstalled = $true
-                }
-
-                if ($fileWaitCount -ge $maxFileWait) {
-                    Write-Host "`n❌ 检测超时：$($VersionConfig.TargetAcadExe) 文件未找到" -ForegroundColor Red
+                if (Test-Path $Config.TargetAcadExe -PathType Leaf) { $cadInstalled = $true }
+                if ($fileWaitCount -ge 240) {
+                    Write-Host "`n❌ 检测超时：$($Config.TargetAcadExe) 文件未找到" -ForegroundColor Red
                     $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
-                    if ($userChoice -eq "Y" -or $userChoice -eq "y") {
-                        $cadInstalled = $true
-                    } else {
-                        Read-Host "按任意键退出程序"
-                        exit 0
-                    }
+                    if ($userChoice -eq "Y" -or $userChoice -eq "y") { $cadInstalled = $true } else { Read-Host "按任意键退出程序"; exit 0 }
                 }
             } while (-not $cadInstalled)
-
             Write-Host "✅ 安装检测完成" -ForegroundColor Green
             Start-Sleep -Seconds 3
-        }
-        else {
-            # ========== 2020/2021版本精准检测逻辑 ==========
+        } else {
+            # ========== 2020/2021 安装逻辑（和你单个脚本完全一致） ==========
             Write-Host "`n==================================================" -ForegroundColor Cyan
-            Write-Host "          开始安装 AutoCAD $version" -ForegroundColor Cyan
+            Write-Host "          开始安装 AutoCAD $Version" -ForegroundColor Cyan
             Write-Host "==================================================" -ForegroundColor Cyan
-            
-            # 启动安装快捷方式
             Write-Host "🔍 正在启动AutoCAD安装，请稍候..." -ForegroundColor White
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$($VersionConfig.InstallFilePath)"" >> `"$logPath`" 2>&1" -Verb RunAs -NoNewWindow
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$($Config.InstallFilePath)"" >> `"$logPath`" 2>&1" -Verb RunAs -NoNewWindow
 
-            # 核心配置
-            $cadInstallPath = "D:\Autodesk\AutoCAD $version\acad.exe"  # 你的安装路径
-            $totalMaxWait = 20                                        # 最长等待20分钟
-            $checkInterval = 30                                       # 每30秒检测一次
+            $cadInstallPath = "D:\Autodesk\AutoCAD $Version\acad.exe"
+            $totalMaxWait = 20
+            $checkInterval = 30
             $elapsedMinutes = 0
             $installCompleted = $false
 
-            # 阶段1：Setup.exe初始化
             Write-Host "`n📌 【安装阶段1】程序初始化中..." -ForegroundColor Yellow
             do {
                 $setupProc = Get-Process -Name Setup -ErrorAction SilentlyContinue
@@ -524,124 +333,80 @@ function Install-CAD {
                     $elapsedMinutes += $checkInterval/60
                 }
             } while ($setupProc -and $elapsedMinutes -lt $totalMaxWait)
-            
-            if ($setupProc) {
-                Write-Host "`n⚠️ 程序初始化超时，自动进入组件安装阶段检测" -ForegroundColor DarkYellow
-            } else {
-                Write-Host "`n✅ 【阶段1完成】程序初始化结束" -ForegroundColor Green
-            }
+            if ($setupProc) { Write-Host "`n⚠️ 程序初始化超时，自动进入组件安装阶段检测" -ForegroundColor DarkYellow }
+            else { Write-Host "`n✅ 【阶段1完成】程序初始化结束" -ForegroundColor Green }
 
-            # 重置计时，进入阶段2
             $elapsedMinutes = 0
             Write-Host "`n📌 【安装阶段2】组件安装中..." -ForegroundColor Yellow
             do {
-                # 检测组件安装核心进程（对应Autodesk component弹窗）
                 $compProc = Get-Process -Name Installer,MSIEXEC -ErrorAction SilentlyContinue
-                # 检测D盘核心文件（最终安装完成依据）
                 $fileExists = Test-Path $cadInstallPath -PathType Leaf
-
-                # 实时状态提示（更友好）
                 $procStatus = if ($compProc) { "组件安装进行中 📦" } else { "组件安装已完成 ✔" }
                 $fileStatus = if ($fileExists) { "主程序已生成 📄" } else { "主程序未生成" }
                 Write-Host "`r⏳ 已等待 $elapsedMinutes 分钟 | $procStatus | $fileStatus" -NoNewline -ForegroundColor White
-
-                # 判定安装完成：组件进程结束 + D盘文件存在
                 if (-not $compProc -and $fileExists) {
                     $installCompleted = $true
-                    Write-Host "`n`n✅ 【安装完成】AutoCAD $version 已成功安装！" -ForegroundColor Green
+                    Write-Host "`n`n✅ 【安装完成】AutoCAD $Version 已成功安装！" -ForegroundColor Green
                 }
-
-                # 未完成则继续等待
                 if (-not $installCompleted) {
                     Start-Sleep -Seconds $checkInterval
                     $elapsedMinutes += $checkInterval/60
                 }
-
-                # 超时判定（核心修改：人工选择继续/退出）
                 if ($elapsedMinutes -ge $totalMaxWait -and -not $installCompleted) {
                     Write-Host "`n`n⏰ 检测超时（已等待20分钟），请手动确认安装状态..." -ForegroundColor DarkYellow
-                    # 显示当前检测结果
-                    if ($fileExists) {
-                        Write-Host "✅ 当前检测：已找到主程序" -ForegroundColor Green
-                    } else {
-                        Write-Host "❌ 当前检测：未找到主程序" -ForegroundColor Red
-                    }
-                    # 人工选择
+                    if ($fileExists) { Write-Host "✅ 当前检测：已找到主程序" -ForegroundColor Green }
+                    else { Write-Host "❌ 当前检测：未找到主程序" -ForegroundColor Red }
                     do {
                         $userChoice = Read-Host "`n请选择操作 [1=继续检测 / 2=安装完成（继续） / 3=退出程序]"
                         switch ($userChoice) {
-                            "1" {
-                                Write-Host "🔄 继续检测，重置等待计时..." -ForegroundColor Cyan
-                                $elapsedMinutes = 0  # 重置计时，继续检测
-                                break
-                            }
-                            "2" {
-                                Write-Host "✅ 手动判定安装完成，跳过后续检测..." -ForegroundColor Green
-                                $installCompleted = $true
-                                break
-                            }
-                            "3" {
-                                Write-Host "❌ 退出程序..." -ForegroundColor Red
-                                Read-Host "按任意键退出"
-                                exit 0
-                            }
-                            default {
-                                Write-Host "⚠️ 输入无效，请输入 1/2/3" -ForegroundColor Red
-                            }
+                            "1" { Write-Host "🔄 继续检测，重置等待计时..." -ForegroundColor Cyan; $elapsedMinutes = 0; break }
+                            "2" { Write-Host "✅ 手动判定安装完成，跳过后续检测..." -ForegroundColor Green; $installCompleted = $true; break }
+                            "3" { Write-Host "❌ 退出程序..." -ForegroundColor Red; Read-Host "按任意键退出"; exit 0 }
+                            default { Write-Host "⚠️ 输入无效，请输入 1/2/3" -ForegroundColor Red }
                         }
-                    } while ($userChoice -notin @("1","2","3"))  # 直到输入有效选项
+                    } while ($userChoice -notin @("1","2","3"))
                 }
             } while (-not $installCompleted)
-            # ========== 2020/2021版本逻辑结束 ==========
         }
 
-        Write-Host "`n🎉 AutoCAD $version 安装完成！" -ForegroundColor Green
+        Write-Host "`n🎉 AutoCAD $Version 安装完成！" -ForegroundColor Green
         Write-Host "ℹ️ 日志已保存到：$logPath" -ForegroundColor Cyan
-
-        # 删除安装文件
-        if (Test-Path $VersionConfig.InstallFilePath -PathType Leaf) {
-            Remove-Item $VersionConfig.InstallFilePath -Force
-            $installFileType = if ($VersionConfig.IsBatInstall) { "批处理文件" } else { "快捷方式" }
-            Write-Host "🗑️ 已自动打扫安装$installFileType" -ForegroundColor Green
+        if (Test-Path $Config.InstallFilePath -PathType Leaf) {
+            Remove-Item $Config.InstallFilePath -Force
+            $type = if ($Config.IsBatInstall) { "批处理文件" } else { "快捷方式" }
+            Write-Host "🗑️ 已自动打扫安装$type" -ForegroundColor Green
         }
 
-        # ✅ 关键修复：只有2023+版本才执行激活，2020/2021直接跳过
-        if ($VersionConfig.HasActivation -and $VersionConfig.IsBatInstall -and $version -ge 2023) {
+        # ✅ 只有 2023+ 且需要激活的版本才走激活流程
+        if ($Config.HasActivation -and $Config.IsBatInstall -and $Version -ge 2023) {
             Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
-            if (Test-Path $VersionConfig.SourceAcadExe -PathType Leaf) {
-                # 确保目标目录存在
-                if (-not (Test-Path $VersionConfig.TargetAcadDir -PathType Container)) {
-                    New-Item -Path $VersionConfig.TargetAcadDir -ItemType Directory -Force | Out-Null
-                    Write-Host "📁 已创建目标目录：$($VersionConfig.TargetAcadDir)" -ForegroundColor Yellow
+            if (Test-Path $Config.SourceAcadExe -PathType Leaf) {
+                if (-not (Test-Path $Config.TargetAcadDir -PathType Container)) {
+                    New-Item -Path $Config.TargetAcadDir -ItemType Directory -Force | Out-Null
+                    Write-Host "📁 已创建目标目录：$($Config.TargetAcadDir)" -ForegroundColor Yellow
                 }
-                
-                # 备份原文件
-                if (Test-Path $VersionConfig.TargetAcadExe -PathType Leaf) {
-                    Copy-Item -Path $VersionConfig.TargetAcadExe -Destination "$($VersionConfig.TargetAcadExe).bak" -Force -ErrorAction SilentlyContinue
+                if (Test-Path $Config.TargetAcadExe -PathType Leaf) {
+                    Copy-Item -Path $Config.TargetAcadExe -Destination "$($Config.TargetAcadExe).bak" -Force -ErrorAction SilentlyContinue
                 }
-                # 替换激活文件
-                Copy-Item -Path $VersionConfig.SourceAcadExe -Destination $VersionConfig.TargetAcadExe -Force
+                Copy-Item -Path $Config.SourceAcadExe -Destination $Config.TargetAcadExe -Force
                 Write-Host "✅ 已激活完成" -ForegroundColor Green
-
-                Remove-Item -Path $VersionConfig.SourceAcadExe -Force
+                Remove-Item $Config.SourceAcadExe -Force
                 Write-Host "🗑️ 已打扫源文件" -ForegroundColor Green
-            }
-            else {
-                Write-Host "⚠️ 未找到源文件：$($VersionConfig.SourceAcadExe)，跳过复制替换" -ForegroundColor Yellow
+            } else {
+                Write-Host "⚠️ 未找到源文件：$($Config.SourceAcadExe)，跳过复制替换" -ForegroundColor Yellow
             }
         }
     }
     catch {
-        Write-Host "`n❌ AutoCAD $version 安装/激活失败：$($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "`n❌ AutoCAD $Version 安装/激活失败：$($_.Exception.Message)" -ForegroundColor Red
         Read-Host "按任意键退出程序"
         exit 0
     }
-
-    Read-Host "`nAutoCAD $version 安装流程结束，按任意键退出程序"
+    Read-Host "`nAutoCAD $Version 安装流程结束，按任意键退出程序"
     exit 0
 }
 
-# ========== 界面函数：版本选择菜单（仅单次显示） ==========
+# ========== 菜单函数 ==========
 function Show-VersionMenu {
     Clear-Host
     Write-Host "========================================" -ForegroundColor Cyan
@@ -650,9 +415,9 @@ function Show-VersionMenu {
     Write-Host "请选择要安装的AutoCAD版本：" -ForegroundColor White
     $index = 1
     $versionList = @()
-    foreach ($version in $CADVersionsConfig.Keys | Sort-Object) {
-        Write-Host "$index) AutoCAD $version" -ForegroundColor White
-        $versionList += $version
+    foreach ($v in $CADVersionsConfig.Keys | Sort-Object) {
+        Write-Host "$index) AutoCAD $v" -ForegroundColor White
+        $versionList += $v
         $index++
     }
     Write-Host "0) 退出程序" -ForegroundColor White
@@ -660,34 +425,28 @@ function Show-VersionMenu {
     return $versionList
 }
 
-# ========== 主程序入口（无循环，单次执行） ==========
+# ========== 主程序 ==========
 function Main {
-    # 仅显示一次版本菜单
     $versionList = Show-VersionMenu
     $choice = Read-Host "请输入选项编号"
-
-    # 验证输入
     if (-not [int]::TryParse($choice, [ref]$null)) {
         Write-Host "❌ 输入无效，请输入数字！" -ForegroundColor Red
         Read-Host "按任意键退出程序"
         exit 0
     }
-
     $choiceInt = [int]$choice
     if ($choiceInt -eq 0) {
         Write-Host "`n👋 退出程序，感谢使用！" -ForegroundColor Cyan
         exit 0
-    }
-    elseif ($choiceInt -ge 1 -and $choiceInt -le $versionList.Count) {
+    } elseif ($choiceInt -ge 1 -and $choiceInt -le $versionList.Count) {
         $selectedVersion = $versionList[$choiceInt - 1]
-        Install-CAD -VersionConfig $CADVersionsConfig[$selectedVersion]
-    }
-    else {
+        Install-CAD -Version $selectedVersion -Config $CADVersionsConfig[$selectedVersion]
+    } else {
         Write-Host "❌ 选项不存在，请重新选择！" -ForegroundColor Red
         Read-Host "按任意键退出程序"
         exit 0
     }
 }
 
-# 启动主程序
+# 启动
 Main
