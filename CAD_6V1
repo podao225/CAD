@@ -1,17 +1,4 @@
-# ===================== 控制台字体/显示优化（视觉放大）=====================
-# 设置控制台字体大小（字号16，窗口尺寸放大）
-try {
-    $console = $Host.UI.RawUI
-    $console.WindowSize = New-Object System.Management.Automation.Host.Size(140, 45) # 窗口尺寸放大
-    $console.BufferSize = New-Object System.Management.Automation.Host.Size(140, 1000) # 缓冲区
-    $font = $console.Font
-    $font.Size = 16 # 字号从默认12调大到16（更醒目）
-    $console.Font = $font
-}
-catch {
-    Write-Host "⚠️ 控制台字体调整失败，不影响脚本运行" -ForegroundColor Yellow
-}
-
+# ===================== 基础配置 =====================
 # 1. 兼容编码
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
@@ -218,7 +205,7 @@ function Download-File {
     Write-Host "`n✅ 下载完成！文件大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB`n" -ForegroundColor Green
 }
 
-# 3. 解压文件函数
+# 3. 解压文件函数（修复多一层文件夹+跳过覆盖）
 function Unzip-File {
     param(
         [string]$ZipPath,
@@ -239,16 +226,40 @@ function Unzip-File {
 
         foreach ($e in $entries) {
             if (-not [string]::IsNullOrEmpty($e.Name)) {
-                $tgt = Join-Path $TargetDir $e.FullName
+                # 修复多一层文件夹问题：移除根目录同名文件夹
+                $entryPath = $e.FullName
+                if ($entryPath -match "^$($cfg.ZipName -replace '\.zip$','')\\(.*)") {
+                    $entryPath = $matches[1]
+                }
+                
+                $tgt = Join-Path $TargetDir $entryPath
                 $dir = Split-Path $tgt -Parent
+                
+                # 跳过已存在文件（不覆盖）
+                if (Test-Path $tgt) {
+                    $current++
+                    $pct = [math]::Round($current/$total*100,1)
+                    Write-Host "`r解压进度：$pct% ($current/$total) - 跳过已存在文件：$entryPath" -NoNewline
+                    continue
+                }
+
                 if (-not (Test-Path $dir)) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $tgt, $true)
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $tgt, $false) # $false = 不覆盖
             }
             $current++
             $pct = [math]::Round($current/$total*100,1)
             Write-Host "`r解压进度：$pct% ($current/$total)" -NoNewline
         }
         $zip.Dispose()
+        
+        # 额外清理：如果解压后仍有根目录同名文件夹，移动内容并删除
+        $extraFolder = Join-Path $TargetDir ($cfg.ZipName -replace '\.zip$','')
+        if (Test-Path $extraFolder) {
+            Write-Host "`n🔍 检测到多余根文件夹，整理文件中..." -ForegroundColor Cyan
+            Get-ChildItem -Path $extraFolder | Move-Item -Destination $TargetDir -Force -ErrorAction SilentlyContinue
+            Remove-Item $extraFolder -Recurse -Force
+        }
+        
         Write-Host "`n✅ 解压完成！`n" -ForegroundColor Green
         Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
     }
