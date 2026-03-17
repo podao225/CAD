@@ -8,12 +8,15 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Clipboard]::Clear()
 Write-Host "✅ 已清空剪贴板内容" -ForegroundColor Green
 
-# 兼容TLS
+# 兼容TLS（修复旧版PowerShell报错）
 try {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::Tls12
+    $currentProtocol = [Net.ServicePointManager]::SecurityProtocol
+    if (-not $currentProtocol.HasFlag([Net.SecurityProtocolType]::Tls12)) {
+        [Net.ServicePointManager]::SecurityProtocol = $currentProtocol -bor [Net.SecurityProtocolType]::Tls12
+    }
 }
 catch {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::Tls
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
 }
 
 # 强制管理员运行
@@ -486,7 +489,7 @@ function Install-CAD {
             Start-Sleep -Seconds 3
         }
         else {
-            # ========== 核心替换：2020/2021版本精准检测逻辑 ==========
+            # ========== 2020/2021版本精准检测逻辑 ==========
             Write-Host "`n==================================================" -ForegroundColor Cyan
             Write-Host "          开始安装 AutoCAD $version" -ForegroundColor Cyan
             Write-Host "==================================================" -ForegroundColor Cyan
@@ -593,8 +596,8 @@ function Install-CAD {
             Write-Host "🗑️ 已自动打扫安装$installFileType" -ForegroundColor Green
         }
 
-        # 激活流程（2023+版本）
-        if ($VersionConfig.HasActivation) {
+        # 激活流程（仅2023+版本执行，修复20/21版本误激活）
+        if ($VersionConfig.HasActivation -and $VersionConfig.IsBatInstall) {
             Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
             if (Test-Path $VersionConfig.SourceAcadExe -PathType Leaf) {
                 # 确保目标目录存在
