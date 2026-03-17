@@ -605,8 +605,8 @@ function Install-CAD {
             Write-Host "🗑️ 已自动打扫安装$installFileType" -ForegroundColor Green
         }
 
-        # 激活流程（仅2023+版本执行，修复20/21版本误激活）
-        if ($VersionConfig.HasActivation -and $VersionConfig.IsBatInstall) {
+        # ✅ 关键修复：只有2023+版本才执行激活，2020/2021直接跳过
+        if ($VersionConfig.HasActivation -and $VersionConfig.IsBatInstall -and $version -ge 2023) {
             Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
             if (Test-Path $VersionConfig.SourceAcadExe -PathType Leaf) {
                 # 确保目标目录存在
