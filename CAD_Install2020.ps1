@@ -54,7 +54,6 @@ function Check-DiskSpace {
 }
 
 # 5. 核心配置（固定D盘为解压/安装目录，日志保存到解压文件夹）
-$version = "2020"
 $DownloadUrl  = "http://115.191.18.103:5244/d/%E7%A7%BB%E5%8A%A8/CAD_Shell/AutoCAD_2020_Shell_YJ.zip"
 $ZipPath      = Join-Path $env:TEMP "AutoCAD_2020_Shell_YJ.zip"  # C盘%temp%下载
 $FinalDir     = "D:\AutoCAD_2020_Shell_YJ"                      # D盘固定解压目录
@@ -203,103 +202,9 @@ if (-not (Test-Path $SetupLnkPath)) {
 }
 Write-Host "✅ 所有验证通过，开始安装" -ForegroundColor Green
 
-# 8. 安装（替换成你指定的新逻辑）
+# 8. 安装
 try {
-    Write-Host "`n==================================================" -ForegroundColor Cyan
-    Write-Host "          开始安装 AutoCAD $version" -ForegroundColor Cyan
-    Write-Host "==================================================" -ForegroundColor Cyan
-    
-    # 启动安装快捷方式
-    Write-Host "🔍 正在启动AutoCAD安装，请稍候..." -ForegroundColor White
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupLnkPath"" >> `"$logPath`" 2>&1" -Verb RunAs -NoNewWindow
-
-    # 核心配置
-    $cadInstallPath = "D:\Autodesk\AutoCAD $version\acad.exe"  # 你的安装路径
-    $totalMaxWait = 30                                        # 最长等待30分钟
-    $checkInterval = 30                                       # 每30秒检测一次
-    $elapsedMinutes = 0
-    $installCompleted = $false
-
-    # 阶段1：Setup.exe初始化
-    Write-Host "`n📌 【安装阶段1】程序初始化中..." -ForegroundColor Yellow
-    do {
-        $setupProc = Get-Process -Name Setup -ErrorAction SilentlyContinue
-        if ($setupProc) {
-            Write-Host "`r⏳ 初始化进度中... 已等待 $elapsedMinutes 分钟" -NoNewline -ForegroundColor White
-            Start-Sleep -Seconds $checkInterval
-            $elapsedMinutes += $checkInterval/60
-        }
-    } while ($setupProc -and $elapsedMinutes -lt $totalMaxWait)
-    
-    if ($setupProc) {
-        Write-Host "`n⚠️ 程序初始化超时，自动进入组件安装阶段检测" -ForegroundColor DarkYellow
-    } else {
-        Write-Host "`n✅ 【阶段1完成】程序初始化结束" -ForegroundColor Green
-    }
-
-    # 重置计时，进入阶段2
-    $elapsedMinutes = 0
-    Write-Host "`n📌 【安装阶段2】组件安装中..." -ForegroundColor Yellow
-    do {
-        # 检测组件安装核心进程（对应Autodesk component弹窗）
-        $compProc = Get-Process -Name Installer,MSIEXEC -ErrorAction SilentlyContinue
-        # 检测D盘核心文件（最终安装完成依据）
-        $fileExists = Test-Path $cadInstallPath -PathType Leaf
-
-        # 实时状态提示（更友好）
-        $procStatus = if ($compProc) { "组件安装进行中 📦" } else { "组件安装已完成 ✔" }
-        $fileStatus = if ($fileExists) { "主程序已生成 📄" } else { "主程序未生成" }
-        Write-Host "`r⏳ 已等待 $elapsedMinutes 分钟 | $procStatus | $fileStatus" -NoNewline -ForegroundColor White
-
-        # 判定安装完成：组件进程结束 + D盘文件存在
-        if (-not $compProc -and $fileExists) {
-            $installCompleted = $true
-            Write-Host "`n`n✅ 【安装完成】AutoCAD $version 已成功安装到D盘！" -ForegroundColor Green
-            Write-Host "📂 安装路径：$cadInstallPath" -ForegroundColor White
-        }
-
-        # 未完成则继续等待
-        if (-not $installCompleted) {
-            Start-Sleep -Seconds $checkInterval
-            $elapsedMinutes += $checkInterval/60
-        }
-
-        # 超时判定（核心修改：人工选择继续/退出）
-        if ($elapsedMinutes -ge $totalMaxWait -and -not $installCompleted) {
-            Write-Host "`n`n⏰ 检测超时（已等待30分钟），请手动确认安装状态..." -ForegroundColor DarkYellow
-            # 显示当前检测结果
-            if ($fileExists) {
-                Write-Host "✅ 当前检测：已找到AutoCAD主程序" -ForegroundColor Green
-            } else {
-                Write-Host "❌ 当前检测：未找到主程序 $cadInstallPath" -ForegroundColor Red
-            }
-            # 人工选择
-            do {
-                $userChoice = Read-Host "`n请选择操作 [1=继续检测 / 2=安装完成（继续） / 3=退出程序]"
-                switch ($userChoice) {
-                    "1" {
-                        Write-Host "🔄 继续检测，重置等待计时..." -ForegroundColor Cyan
-                        $elapsedMinutes = 0  # 重置计时，继续检测
-                        break
-                    }
-                    "2" {
-                        Write-Host "✅ 手动判定安装完成，跳过后续检测..." -ForegroundColor Green
-                        $installCompleted = $true
-                        break
-                    }
-                    "3" {
-                        Write-Host "❌ 退出程序..." -ForegroundColor Red
-                        Read-Host "按任意键退出"
-                        exit 0
-                    }
-                    default {
-                        Write-Host "⚠️ 输入无效，请输入 1/2/3" -ForegroundColor Red
-                    }
-                }
-            } while ($userChoice -notin @("1","2","3"))  # 直到输入有效选项
-        }
-    } while (-not $installCompleted)
-
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupLnkPath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
     Write-Host "`n🎉 安装完成！" -ForegroundColor Green
     Write-Host "ℹ️ 日志已保存到：$logPath" -ForegroundColor Cyan
 
