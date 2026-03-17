@@ -53,11 +53,11 @@ function Check-DiskSpace {
     return @{ C = $cFreeGB; D = $dFreeGB }
 }
 
-# 5. 核心配置（适配2024版：Img→image、666.lnk→Install AutoCAD 2024_1.bat）
+# 5. 核心配置（适配2024版：Img→image、666.lnk→Install AutoCAD 2024.bat）
 $DownloadUrl  = "http://115.191.18.103:5244/d/%E7%A7%BB%E5%8A%A8/CAD_Shell/AutoCAD_2024_Shell_YJ.zip"
 $ZipPath      = Join-Path $env:TEMP "AutoCAD_2024_Shell_YJ.zip"  # C盘%temp%下载
 $FinalDir     = "D:\AutoCAD_2024_Shell_YJ"                      # D盘固定解压目录
-$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2024_1.bat" # 替换666.lnk为指定bat文件
+$SetupBatPath = Join-Path $FinalDir "Install AutoCAD 2024.bat" # 替换666.lnk为指定bat文件
 $ImageDir     = Join-Path $FinalDir "image"                      # Img→image
 $logPath      = Join-Path $FinalDir "install_log.txt"            # 日志保存到解压文件夹
 $SourceAcadExe = Join-Path $FinalDir "acad.exe"                  # 源acad.exe路径
@@ -206,7 +206,7 @@ if ($imageItems -eq $null -or $imageItems.Count -eq 0) {
     exit 1
 }
 if (-not (Test-Path $SetupBatPath)) {
-    Write-Host "❌ 未找到安装文件 Install AutoCAD 2024_1.bat" -ForegroundColor Red
+    Write-Host "❌ 未找到安装文件 Install AutoCAD 2024.bat" -ForegroundColor Red
     Read-Host "按任意键退出"
     exit 1
 }
