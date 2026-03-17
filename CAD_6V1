@@ -6,7 +6,7 @@ $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Clipboard]::Clear()
 
-# TLS 兼容（和你单个脚本完全一致）
+# TLS 兼容（兼容旧版PowerShell）
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 }
@@ -20,7 +20,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit
 }
 
-# ========== 版本配置（和你单个脚本完全一致） ==========
+# ========== 版本配置 ==========
 $CADVersionsConfig = @{
     "2020" = @{
         CMinSpaceGB      = 2
@@ -176,7 +176,7 @@ function Download-InstallPackage {
     $lastSize = 0
     $totalSizeEst = $TotalSizeEstGB * 1GB
     while ($job.State -eq "Running") {
-        if (Test-Path $ZipPath -PathType Leaf) {
+        if (Test-Path $ZipPath) {
             $currentSize = (Get-Item $ZipPath).Length
             $elapsed = ((Get-Date) - $startTime).TotalSeconds
             $avgSpeed = if ($elapsed -gt 0) { [math]::Round(($currentSize / 1024) / $elapsed, 1) } else { 0 }
@@ -230,15 +230,15 @@ function Extract-InstallPackage {
         }
         $zipFile.Dispose()
         Write-Host "`n✅ 解压完成！" -ForegroundColor Green
-        if (Test-Path $ZipPath -PathType Leaf) { Remove-Item $ZipPath -Force; Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green }
+        if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force; Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green }
     }
     catch { throw "解压失败：$($_.Exception.Message)" }
 }
 
-# ========== 核心安装函数（和你单个脚本逻辑完全对齐） ==========
+# ========== 核心安装函数（兼容旧版PowerShell） ==========
 function Install-CAD {
     param(
-        [string]$Version,  # ✅ 直接传版本号，彻底解决参数解析问题
+        [string]$Version,
         [hashtable]$Config
     )
     Write-Host "`n========================================" -ForegroundColor Cyan
@@ -251,7 +251,8 @@ function Install-CAD {
 
     Write-Host "`n🔍 磁盘检测中（AutoCAD $Version）..." -ForegroundColor Cyan
     $skipAll = $false
-    if (Test-Path $Config.InstallFilePath -PathType Leaf -and (Test-Path $ImageDir -PathType Container)) {
+    # ✅ 兼容旧版：去掉 -PathType Leaf，用 Test-Path 直接判断文件存在
+    if (Test-Path $Config.InstallFilePath -and (Test-Path $ImageDir)) {
         $imageItems = Get-ChildItem -Path $ImageDir -Recurse -ErrorAction SilentlyContinue
         if ($imageItems -and $imageItems.Count -gt 0) {
             Write-Host "✅ 检测到AutoCAD $Version完整安装文件，跳过下载+解压" -ForegroundColor Green
@@ -266,7 +267,7 @@ function Install-CAD {
         }
         catch { Write-Host "❌ $($_.Exception.Message)" -ForegroundColor Red; Read-Host "按任意键退出程序"; exit 0 }
 
-        if (-not (Test-Path $Config.ZipPath -PathType Leaf)) {
+        if (-not (Test-Path $Config.ZipPath)) {
             try {
                 Download-InstallPackage -DownloadUrl $Config.DownloadUrl -ZipPath $Config.ZipPath -TotalSizeEstGB $Config.TotalSizeEstGB -DownloadErrorCheck $Config.DownloadErrorCheck
             }
@@ -278,7 +279,7 @@ function Install-CAD {
     }
 
     Write-Host "`n🔍 AutoCAD $Version安装前二次验证..." -ForegroundColor Cyan
-    if (-not (Test-Path $ImageDir -PathType Container) -or -not (Test-Path $Config.InstallFilePath)) {
+    if (-not (Test-Path $ImageDir) -or -not (Test-Path $Config.InstallFilePath)) {
         Write-Host "❌ 安装文件缺失" -ForegroundColor Red; Read-Host "按任意键退出程序"; exit 0
     }
     Write-Host "✅ AutoCAD $Version所有验证通过，开始安装" -ForegroundColor Green
@@ -301,7 +302,7 @@ function Install-CAD {
             do {
                 Start-Sleep -Seconds 5
                 $fileWaitCount++
-                if (Test-Path $Config.TargetAcadExe -PathType Leaf) { $cadInstalled = $true }
+                if (Test-Path $Config.TargetAcadExe) { $cadInstalled = $true }
                 if ($fileWaitCount -ge 240) {
                     Write-Host "`n❌ 检测超时：$($Config.TargetAcadExe) 文件未找到" -ForegroundColor Red
                     $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
@@ -311,7 +312,7 @@ function Install-CAD {
             Write-Host "✅ 安装检测完成" -ForegroundColor Green
             Start-Sleep -Seconds 3
         } else {
-            # ========== 2020/2021 安装逻辑（和你单个脚本完全一致） ==========
+            # ========== 2020/2021 安装逻辑 ==========
             Write-Host "`n==================================================" -ForegroundColor Cyan
             Write-Host "          开始安装 AutoCAD $Version" -ForegroundColor Cyan
             Write-Host "==================================================" -ForegroundColor Cyan
@@ -340,7 +341,7 @@ function Install-CAD {
             Write-Host "`n📌 【安装阶段2】组件安装中..." -ForegroundColor Yellow
             do {
                 $compProc = Get-Process -Name Installer,MSIEXEC -ErrorAction SilentlyContinue
-                $fileExists = Test-Path $cadInstallPath -PathType Leaf
+                $fileExists = Test-Path $cadInstallPath
                 $procStatus = if ($compProc) { "组件安装进行中 📦" } else { "组件安装已完成 ✔" }
                 $fileStatus = if ($fileExists) { "主程序已生成 📄" } else { "主程序未生成" }
                 Write-Host "`r⏳ 已等待 $elapsedMinutes 分钟 | $procStatus | $fileStatus" -NoNewline -ForegroundColor White
@@ -371,7 +372,7 @@ function Install-CAD {
 
         Write-Host "`n🎉 AutoCAD $Version 安装完成！" -ForegroundColor Green
         Write-Host "ℹ️ 日志已保存到：$logPath" -ForegroundColor Cyan
-        if (Test-Path $Config.InstallFilePath -PathType Leaf) {
+        if (Test-Path $Config.InstallFilePath) {
             Remove-Item $Config.InstallFilePath -Force
             $type = if ($Config.IsBatInstall) { "批处理文件" } else { "快捷方式" }
             Write-Host "🗑️ 已自动打扫安装$type" -ForegroundColor Green
@@ -380,12 +381,12 @@ function Install-CAD {
         # ✅ 只有 2023+ 且需要激活的版本才走激活流程
         if ($Config.HasActivation -and $Config.IsBatInstall -and $Version -ge 2023) {
             Write-Host "`n📤 开始激活中..." -ForegroundColor Cyan
-            if (Test-Path $Config.SourceAcadExe -PathType Leaf) {
-                if (-not (Test-Path $Config.TargetAcadDir -PathType Container)) {
+            if (Test-Path $Config.SourceAcadExe) {
+                if (-not (Test-Path $Config.TargetAcadDir)) {
                     New-Item -Path $Config.TargetAcadDir -ItemType Directory -Force | Out-Null
                     Write-Host "📁 已创建目标目录：$($Config.TargetAcadDir)" -ForegroundColor Yellow
                 }
-                if (Test-Path $Config.TargetAcadExe -PathType Leaf) {
+                if (Test-Path $Config.TargetAcadExe) {
                     Copy-Item -Path $Config.TargetAcadExe -Destination "$($Config.TargetAcadExe).bak" -Force -ErrorAction SilentlyContinue
                 }
                 Copy-Item -Path $Config.SourceAcadExe -Destination $Config.TargetAcadExe -Force
