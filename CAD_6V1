@@ -1,3 +1,14 @@
+# ===================== 新增：清除剪贴板内容 =====================
+try {
+    # 清除Windows剪贴板内容
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.Clipboard]::Clear()
+    Write-Host "✅ 已清除无效剪贴`n" -ForegroundColor Green
+}
+catch {
+    Write-Host "⚠️ 剪贴板清理失败（不影响后续操作）：$($_.Exception.Message)`n" -ForegroundColor Yellow
+}
+
 # ===================== 基础配置 =====================
 # 1. 兼容编码
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
