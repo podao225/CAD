@@ -204,18 +204,64 @@ Write-Host "✅ 所有验证通过，开始安装" -ForegroundColor Green
 
 # 8. 安装
 try {
+    # 1. 启动安装程序（调用666.lnk）
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupLnkPath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
-    Write-Host "`n🎉 安装完成！" -ForegroundColor Green
-    Write-Host "ℹ️ 日志已保存到：$logPath" -ForegroundColor Cyan
+    Write-Host "`n🎉 安装程序启动完成！" -ForegroundColor Green
+    Write-Host "ℹ️ 安装日志已保存到：$logPath" -ForegroundColor Cyan
 
-    # 安装完成后自动删除 666.lnk
-    if (Test-Path $SetupLnkPath -PathType Leaf) {
-        Remove-Item $SetupLnkPath -Force
-        Write-Host "🗑️ 已自动打扫安装文件" -ForegroundColor Green
+    # 2. 检测AutoCAD 2021主程序是否生成（核心判断）
+    $cadExePath = "D:\Autodesk\AutoCAD 2021\acad.exe"  # 适配2021版本路径
+    $isCadExeExists = Test-Path $cadExePath -PathType Leaf
+
+    if ($isCadExeExists) {
+        # 2.1 主程序生成成功：直接清理安装文件
+        Write-Host "✅ 检测到AutoCAD 2021主程序已生成：$cadExePath" -ForegroundColor Green
+        
+        # 清理666.lnk安装快捷方式
+        if (Test-Path $SetupLnkPath -PathType Leaf) {
+            Remove-Item $SetupLnkPath -Force
+            Write-Host "🗑️ 已自动删除安装快捷方式 666.lnk" -ForegroundColor Green
+        }
+    }
+    else {
+        # 2.2 主程序未生成：弹出人工选择交互
+        Write-Host "❌ 未检测到AutoCAD 2021主程序：$cadExePath" -ForegroundColor Red
+        
+        # 循环获取有效输入，避免无效值
+        do {
+            $userChoice = Read-Host "`n是否继续执行后续操作？[1=继续 / 2=退出并删除脚本]"
+            switch ($userChoice) {
+                "1" {
+                    # 选择继续：仅执行666.lnk清理
+                    Write-Host "🔍 选择继续，开始清理安装文件..." -ForegroundColor Cyan
+                    if (Test-Path $SetupLnkPath -PathType Leaf) {
+                        Remove-Item $SetupLnkPath -Force
+                        Write-Host "🗑️ 已自动删除安装快捷方式 666.lnk" -ForegroundColor Green
+                    }
+                    break
+                }
+                "2" {
+                    # 选择退出：删除脚本文件并结束程序
+                    Write-Host "🛑 选择退出，正在删除脚本文件..." -ForegroundColor Red
+                    $scriptPath = $MyInvocation.MyCommand.Definition
+                    if (Test-Path $scriptPath -PathType Leaf) {
+                        Remove-Item $scriptPath -Force
+                        Write-Host "🗑️ 已自动删除脚本文件" -ForegroundColor Green
+                    }
+                    Write-Host "🔚 程序已结束" -ForegroundColor Red
+                    exit 0  # 立即结束脚本
+                }
+                default {
+                    Write-Host "❌ 输入无效！请输入 1 或 2" -ForegroundColor Red
+                }
+            }
+        } while ($userChoice -notin @("1", "2"))
     }
 }
 catch {
-    Write-Host "`n❌ 安装失败：$($_.Exception.Message)" -ForegroundColor Red
+    # 3. 安装程序启动失败的异常处理
+    Write-Host "`n❌ 安装程序启动失败：$($_.Exception.Message)" -ForegroundColor Red
+    exit 1  # 启动失败直接退出，返回错误码
 }
 
 # 9. 脚本自删除
