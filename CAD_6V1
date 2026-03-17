@@ -197,7 +197,16 @@ function Download-InstallPackage {
     
     $jobScript = {
         param($url, $path, $checkError)
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::Tls12
+        # 修复下载任务内的TLS协议（兼容旧版PowerShell）
+        try {
+            $currentProtocol = [Net.ServicePointManager]::SecurityProtocol
+            if (-not $currentProtocol.HasFlag([Net.SecurityProtocolType]::Tls12)) {
+                [Net.ServicePointManager]::SecurityProtocol = $currentProtocol -bor [Net.SecurityProtocolType]::Tls12
+            }
+        }
+        catch {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
+        }
         $webClient = New-Object System.Net.WebClient
         $webClient.Headers.Add("User-Agent", "Mozilla/5.0")
         try {
