@@ -3,11 +3,14 @@ try {
     # 清除Windows剪贴板内容
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.Clipboard]::Clear()
-    Write-Host "✅ 已清除无效剪贴`n" -ForegroundColor Green
+    Write-Host "✅ 已清除剪贴板内容`n" -ForegroundColor Green
 }
 catch {
     Write-Host "⚠️ 剪贴板清理失败（不影响后续操作）：$($_.Exception.Message)`n" -ForegroundColor Yellow
 }
+
+# ========== 清屏1：脚本启动后（剪贴板清理完成后） ==========
+Clear-Host
 
 # ===================== 基础配置 =====================
 # 1. 兼容编码
@@ -42,6 +45,9 @@ Start-Process -FilePath "cmd.exe" -ArgumentList "/c ""$tempBatPath""" -Verb RunA
 if (Test-Path $tempBatPath) { Remove-Item $tempBatPath -Force }
 Write-Host "✅ 重启项清理完成！`n" -ForegroundColor Green
 
+# ========== 清屏2：选择版本前（重启项清理完成后） ==========
+Clear-Host
+
 # 5. 版本选择交互（放大菜单文字）
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "=============== 📌 AutoCAD 版本选择菜单 ===============" -ForegroundColor Cyan
@@ -61,6 +67,9 @@ do {
         Write-Host "❌ 输入无效！请输入 1-6 之间的数字 ❌" -ForegroundColor Red
     }
 } while ($versionChoice -notin @("1","2","3","4","5","6"))
+
+# ========== 清屏3：选择版本后（版本输入完成后） ==========
+Clear-Host
 
 # ===================== 版本配置参数（核心差异化配置）=====================
 $versionConfig = @{
@@ -216,7 +225,7 @@ function Download-File {
     Write-Host "`n✅ 下载完成！文件大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB`n" -ForegroundColor Green
 }
 
-# 3. 解压文件函数（完全参考指定格式+跳过覆盖+修复多一层文件夹）
+# 3. 解压文件函数（完全参考20版本逻辑重构，修复23版本解压路径问题）
 function Unzip-File {
     param(
         [string]$ZipPath,
@@ -232,35 +241,54 @@ function Unzip-File {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                # 修复多一层文件夹：跳过根目录第一层，直接取内层路径
-                $entryParts = $entry.FullName -split '[\\/]'
-                if ($entryParts.Count -gt 1) {
-                    $innerPath = $entryParts[1..($entryParts.Count-1)] -join '\'
-                    $targetPath = Join-Path $FinalDir $innerPath
-                } else {
-                    $targetPath = Join-Path $FinalDir $entry.FullName
+                # ========== 核心修复：完全参考20版本路径处理逻辑 ==========
+                # 无论压缩包内第一层文件夹名称是什么，都直接跳过，只取内层路径
+                $fullPathParts = $entry.FullName -split '[\\/]'
+                if ($fullPathParts.Count -ge 2) {
+                    # 跳过第一层文件夹，直接拼接内层路径（适配23版本压缩包结构）
+                    $innerFilePath = $fullPathParts[1..($fullPathParts.Count - 1)] -join '\'
+                    $targetPath = Join-Path -Path $FinalDir -ChildPath $innerFilePath
+                }
+                else {
+                    # 根目录文件直接解压到目标目录
+                    $targetPath = Join-Path -Path $FinalDir -ChildPath $entry.FullName
                 }
                 
-                # 核心修改：跳过已存在的文件（不覆盖）
-                if (Test-Path $targetPath) {
+                # 跳过已存在文件（不覆盖）
+                if (Test-Path -Path $targetPath -PathType Any) {
                     $current++
                     $percent = [math]::Round(($current / $total) * 100, 1)
                     Write-Host "`r解压进度：$percent% ($current/$total) - 跳过已存在文件" -NoNewline
                     continue
                 }
 
-                $targetDir = Split-Path $targetPath -Parent
-                if (-not (Test-Path $targetDir)) {
-                    [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
+                # 创建目标目录（如果不存在）
+                $targetDirectory = Split-Path -Path $targetPath -Parent
+                if (-not (Test-Path -Path $targetDirectory)) {
+                    [System.IO.Directory]::CreateDirectory($targetDirectory) | Out-Null
                 }
-                # 关键修改：第三个参数改为 $false（跳过覆盖，原代码是 $true 覆盖）
+
+                # 解压文件（不覆盖）
                 [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $false)
             }
             $current++
             $percent = [math]::Round(($current / $total) * 100, 1)
             Write-Host "`r解压进度：$percent% ($current/$total)" -NoNewline
         }
-        $zipFile.Dispose()  # 释放压缩包句柄
+        
+        # 释放压缩包句柄
+        $zipFile.Dispose()
+        
+        # ========== 额外修复：强制清理多余的根文件夹（针对23版本） ==========
+        $possibleExtraFolder = Join-Path -Path $FinalDir -ChildPath ($cfg.ZipName -replace '\.zip$','')
+        if (Test-Path -Path $possibleExtraFolder -PathType Container) {
+            # 移动多余文件夹内的所有内容到目标目录
+            Get-ChildItem -Path $possibleExtraFolder | Move-Item -Destination $FinalDir -Force -ErrorAction SilentlyContinue
+            # 删除空的多余文件夹
+            Remove-Item -Path $possibleExtraFolder -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "`n🔧 已清理2023版本多余根文件夹" -ForegroundColor Cyan
+        }
+
         Write-Host "`n✅ 解压完成！" -ForegroundColor Green
         
         # 自动删除C盘压缩包
@@ -307,7 +335,7 @@ try {
             Write-Host "✅ 本地已存在压缩包，跳过下载`n" -ForegroundColor Green
         }
 
-        # 解压文件（调用新的解压函数）
+        # 解压文件（调用修复后的解压函数）
         Unzip-File -ZipPath $ZipPath -FinalDir $cfg.InstallDir
     }
 
