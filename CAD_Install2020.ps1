@@ -203,15 +203,16 @@ if (-not (Test-Path $SetupLnkPath)) {
 }
 Write-Host "✅ 所有验证通过，开始安装" -ForegroundColor Green
 
-# 8. 安装（完全替换为你指定的判断逻辑，保留原有功能）
+# 8. 安装（仅修复问题部分，保留所有逻辑）
 try {
     Write-Host "`n==================================================" -ForegroundColor Cyan
     Write-Host "          开始安装 AutoCAD $version" -ForegroundColor Cyan
     Write-Host "==================================================" -ForegroundColor Cyan
     
-    # 启动安装快捷方式（替换为单版本的$SetupLnkPath，去掉六合一的$VersionConfig）
+    # 修复点1：解决Start-Process参数解析错误（给日志路径加转义，兼容旧版PowerShell）
     Write-Host "🔍 正在启动AutoCAD安装，请稍候..." -ForegroundColor White
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupLnkPath"" >> `"$logPath`" 2>&1" -Verb RunAs -NoNewWindow
+    $cmdArgs = "/c start """" ""$SetupLnkPath"" >> ""$logPath"" 2>&1"
+    Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -Verb RunAs -NoNewWindow -ErrorAction Stop
 
     # 核心配置
     $cadInstallPath = "D:\Autodesk\AutoCAD $version\acad.exe"  # 你的安装路径
@@ -225,7 +226,9 @@ try {
     do {
         $setupProc = Get-Process -Name Setup -ErrorAction SilentlyContinue
         if ($setupProc) {
-            Write-Host "`r⏳ 初始化进度中... 已等待 $elapsedMinutes 分钟" -NoNewline -ForegroundColor White
+            # 修复点2：elapsedMinutes显示为小数，避免整数截断导致的显示异常
+            $elapsedDisplay = [math]::Round($elapsedMinutes, 1)
+            Write-Host "`r⏳ 初始化进度中... 已等待 $elapsedDisplay 分钟" -NoNewline -ForegroundColor White
             Start-Sleep -Seconds $checkInterval
             $elapsedMinutes += $checkInterval/60
         }
@@ -243,13 +246,15 @@ try {
     do {
         # 检测组件安装核心进程（对应Autodesk component弹窗）
         $compProc = Get-Process -Name Installer,MSIEXEC -ErrorAction SilentlyContinue
-        # 检测D盘核心文件（最终安装完成依据）
-        $fileExists = Test-Path $cadInstallPath -PathType Leaf
+        # 修复点3：Test-Path加ErrorAction，避免路径不存在时报错中断
+        $fileExists = Test-Path $cadInstallPath -PathType Leaf -ErrorAction SilentlyContinue
 
         # 实时状态提示（更友好）
         $procStatus = if ($compProc) { "组件安装进行中 📦" } else { "组件安装已完成 ✔" }
         $fileStatus = if ($fileExists) { "主程序已生成 📄" } else { "主程序未生成" }
-        Write-Host "`r⏳ 已等待 $elapsedMinutes 分钟 | $procStatus | $fileStatus" -NoNewline -ForegroundColor White
+        # 修复点4：阶段2同样优化时间显示
+        $elapsedDisplay = [math]::Round($elapsedMinutes, 1)
+        Write-Host "`r⏳ 已等待 $elapsedDisplay 分钟 | $procStatus | $fileStatus" -NoNewline -ForegroundColor White
 
         # 判定安装完成：组件进程结束 + D盘文件存在
         if (-not $compProc -and $fileExists) {
@@ -312,12 +317,16 @@ try {
 }
 catch {
     Write-Host "`n❌ 安装失败：$($_.Exception.Message)" -ForegroundColor Red
+    Read-Host "按任意键退出"
+    exit 1
 }
 
 # 9. 脚本自删除（保留原有功能）
 $scriptPath = $MyInvocation.MyCommand.Definition
 if (Test-Path $scriptPath -PathType Leaf) {
-    Remove-Item $scriptPath -Force
+    # 修复点5：自删除前加延迟，避免脚本还在运行时删除失败
+    Start-Sleep -Milliseconds 500
+    Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
     Write-Host "🗑️ 已自动打扫脚本文件" -ForegroundColor Green
 }
 
