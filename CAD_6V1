@@ -205,66 +205,63 @@ function Download-File {
     Write-Host "`n✅ 下载完成！文件大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB`n" -ForegroundColor Green
 }
 
-# 3. 解压文件函数（修复多一层文件夹+跳过覆盖）
+# 3. 解压文件函数（完全参考指定格式+跳过覆盖+修复多一层文件夹）
 function Unzip-File {
     param(
         [string]$ZipPath,
-        [string]$TargetDir
+        [string]$FinalDir
     )
-    Write-Host "==================================================" -ForegroundColor Yellow
-    Write-Host "=============== 📦 开始解压AutoCAD $($cfg.Version) 安装包 ===============" -ForegroundColor Yellow
-    Write-Host "==================================================" -ForegroundColor Yellow
-    
-    if (-not (Test-Path $TargetDir)) { New-Item $TargetDir -ItemType Directory -Force | Out-Null }
-    
+    Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
-        $entries = $zip.Entries
+        $zipFile = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        $entries = $zipFile.Entries
         $total = $entries.Count
         $current = 0
 
-        foreach ($e in $entries) {
-            if (-not [string]::IsNullOrEmpty($e.Name)) {
-                # 修复多一层文件夹问题：移除根目录同名文件夹
-                $entryPath = $e.FullName
-                if ($entryPath -match "^$($cfg.ZipName -replace '\.zip$','')\\(.*)") {
-                    $entryPath = $matches[1]
+        foreach ($entry in $entries) {
+            if (-not [string]::IsNullOrEmpty($entry.Name)) {
+                # 修复多一层文件夹：跳过根目录第一层，直接取内层路径
+                $entryParts = $entry.FullName -split '[\\/]'
+                if ($entryParts.Count -gt 1) {
+                    $innerPath = $entryParts[1..($entryParts.Count-1)] -join '\'
+                    $targetPath = Join-Path $FinalDir $innerPath
+                } else {
+                    $targetPath = Join-Path $FinalDir $entry.FullName
                 }
                 
-                $tgt = Join-Path $TargetDir $entryPath
-                $dir = Split-Path $tgt -Parent
-                
-                # 跳过已存在文件（不覆盖）
-                if (Test-Path $tgt) {
+                # 核心修改：跳过已存在的文件（不覆盖）
+                if (Test-Path $targetPath) {
                     $current++
-                    $pct = [math]::Round($current/$total*100,1)
-                    Write-Host "`r解压进度：$pct% ($current/$total) - 跳过已存在文件：$entryPath" -NoNewline
+                    $percent = [math]::Round(($current / $total) * 100, 1)
+                    Write-Host "`r解压进度：$percent% ($current/$total) - 跳过已存在文件" -NoNewline
                     continue
                 }
 
-                if (-not (Test-Path $dir)) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $tgt, $false) # $false = 不覆盖
+                $targetDir = Split-Path $targetPath -Parent
+                if (-not (Test-Path $targetDir)) {
+                    [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
+                }
+                # 关键修改：第三个参数改为 $false（跳过覆盖，原代码是 $true 覆盖）
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $false)
             }
             $current++
-            $pct = [math]::Round($current/$total*100,1)
-            Write-Host "`r解压进度：$pct% ($current/$total)" -NoNewline
+            $percent = [math]::Round(($current / $total) * 100, 1)
+            Write-Host "`r解压进度：$percent% ($current/$total)" -NoNewline
         }
-        $zip.Dispose()
+        $zipFile.Dispose()  # 释放压缩包句柄
+        Write-Host "`n✅ 解压完成！" -ForegroundColor Green
         
-        # 额外清理：如果解压后仍有根目录同名文件夹，移动内容并删除
-        $extraFolder = Join-Path $TargetDir ($cfg.ZipName -replace '\.zip$','')
-        if (Test-Path $extraFolder) {
-            Write-Host "`n🔍 检测到多余根文件夹，整理文件中..." -ForegroundColor Cyan
-            Get-ChildItem -Path $extraFolder | Move-Item -Destination $TargetDir -Force -ErrorAction SilentlyContinue
-            Remove-Item $extraFolder -Recurse -Force
+        # 自动删除C盘压缩包
+        if (Test-Path $ZipPath -PathType Leaf) {
+            Remove-Item $ZipPath -Force
+            Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green
         }
-        
-        Write-Host "`n✅ 解压完成！`n" -ForegroundColor Green
-        Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
     }
     catch {
-        throw "解压失败：$($_.Exception.Message)"
+        Write-Host "`n❌ 解压失败：$($_.Exception.Message)" -ForegroundColor Red
+        Read-Host "按任意键退出"
+        exit 1
     }
 }
 
@@ -299,8 +296,8 @@ try {
             Write-Host "✅ 本地已存在压缩包，跳过下载`n" -ForegroundColor Green
         }
 
-        # 解压文件
-        Unzip-File -ZipPath $ZipPath -TargetDir $cfg.InstallDir
+        # 解压文件（调用新的解压函数）
+        Unzip-File -ZipPath $ZipPath -FinalDir $cfg.InstallDir
     }
 
     # 3. 安装前验证
