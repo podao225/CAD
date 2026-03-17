@@ -71,7 +71,7 @@ do {
 # ========== 清屏3：选择版本后（版本输入完成后） ==========
 Clear-Host
 
-# ===================== 版本配置参数（统一23/25结构）=====================
+# ===================== 版本配置参数（保留各版本独有配置）=====================
 $versionConfig = @{
     "1" = @{
         Version = "2020"
@@ -102,8 +102,8 @@ $versionConfig = @{
         DownloadUrl = "http://115.191.18.103:5244/d/%E7%A7%BB%E5%8A%A8/CAD_Shell/AutoCAD_2023_Shell_YJ.zip"
         ZipName = "AutoCAD_2023_Shell_YJ.zip"
         InstallDir = "D:\AutoCAD_2023_Shell_YJ"
-        SetupFile = "Install AutoCAD 2023_1.bat"  # 匹配23版本安装脚本名
-        DataDir = "image"                       # 统一和25版本一致
+        SetupFile = "Install AutoCAD 2023_1.bat"
+        DataDir = "image"
         CMinSpace = 4
         DMinSpace = 10
         ExePath = "D:\Autodesk\AutoCAD 2023\acad.exe"
@@ -128,8 +128,8 @@ $versionConfig = @{
         DownloadUrl = "http://115.191.18.103:5244/d/%E7%A7%BB%E5%8A%A8/CAD_Shell/AutoCAD_2025_Shell_YJ.zip"
         ZipName = "AutoCAD_2025_Shell_YJ.zip"
         InstallDir = "D:\AutoCAD_2025_Shell_YJ"
-        SetupFile = "Install AutoCAD 2025.bat"   # 匹配25版本安装脚本名
-        DataDir = "image"                       # 匹配25版本压缩包内目录
+        SetupFile = "Install AutoCAD 2025.bat"
+        DataDir = "image"
         CMinSpace = 4
         DMinSpace = 10
         ExePath = "D:\Autodesk\AutoCAD 2025\acad.exe"
@@ -159,7 +159,7 @@ $DataDirPath = Join-Path $cfg.InstallDir $cfg.DataDir
 $logPath = Join-Path $cfg.InstallDir "install_log.txt"
 $SourceAcadExe = Join-Path $cfg.InstallDir "acad.exe"
 
-# ===================== 通用函数定义 =====================
+# ===================== 通用函数定义（统一为2020解压方式）=====================
 # 1. 磁盘空间检测函数
 function Check-DiskSpace {
     param(
@@ -181,7 +181,7 @@ function Check-DiskSpace {
     return @{ C = $cFreeGB; D = $dFreeGB }
 }
 
-# 2. 文件下载函数（增加文件完整性预校验）
+# 2. 文件下载函数（保留基础逻辑）
 function Download-File {
     param(
         [string]$Url,
@@ -192,12 +192,6 @@ function Download-File {
     Write-Host "=============== 📥 开始下载AutoCAD $($cfg.Version) 安装包 ===============" -ForegroundColor Yellow
     Write-Host "==================================================" -ForegroundColor Yellow
     
-    # 先删除旧的损坏压缩包（避免解压异常）
-    if (Test-Path $SavePath -PathType Leaf) {
-        Remove-Item $SavePath -Force
-        Write-Host "🗑️ 已删除旧压缩包，重新下载`n" -ForegroundColor Cyan
-    }
-
     $job = Start-Job -ScriptBlock {
         param($u, $p)
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -225,14 +219,13 @@ function Download-File {
     Receive-Job $job -Wait | Out-Null
     Remove-Job $job -Force
 
-    # 下载后校验文件大小（避免空文件/损坏）
-    if (-not (Test-Path $SavePath) -or (Get-Item $SavePath).Length -lt 100MB) {
-        throw "下载的文件为空或损坏（文件大小异常）"
+    if (-not (Test-Path $SavePath) -or (Get-Item $SavePath).Length -eq 0) {
+        throw "下载的文件为空或损坏"
     }
     Write-Host "`n✅ 下载完成！文件大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB`n" -ForegroundColor Green
 }
 
-# 3. 解压文件函数（修复压缩包识别，强制完整解压）
+# 3. 解压文件函数（统一为2020版本解压方式：保留原始结构、不覆盖、不清空目录）
 function Unzip-File {
     param(
         [string]$ZipPath,
@@ -240,11 +233,10 @@ function Unzip-File {
     )
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
-        # 先清空目标目录（避免旧文件干扰）
-        if (Test-Path $FinalDir) {
-            Remove-Item $FinalDir -Recurse -Force -ErrorAction SilentlyContinue
+        # 2020解压方式核心1：不提前清空目标目录，保留已有文件
+        if (-not (Test-Path $FinalDir)) {
+            New-Item $FinalDir -ItemType Directory -Force | Out-Null
         }
-        New-Item $FinalDir -ItemType Directory -Force | Out-Null
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zipFile = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
@@ -254,17 +246,25 @@ function Unzip-File {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                # 直接解压到目标目录，保持压缩包内原始结构（和25版本一致）
+                # 2020解压方式核心2：保留压缩包内原始路径层级，不修改
                 $targetPath = Join-Path -Path $FinalDir -ChildPath $entry.FullName
                 
+                # 2020解压方式核心3：跳过已存在文件，不覆盖
+                if (Test-Path -Path $targetPath -PathType Any) {
+                    $current++
+                    $percent = [math]::Round(($current / $total) * 100, 1)
+                    Write-Host "`r解压进度：$percent% ($current/$total) - 跳过已存在文件" -NoNewline
+                    continue
+                }
+
                 # 创建目标目录（如果不存在）
                 $targetDirectory = Split-Path -Path $targetPath -Parent
                 if (-not (Test-Path -Path $targetDirectory)) {
                     [System.IO.Directory]::CreateDirectory($targetDirectory) | Out-Null
                 }
 
-                # 强制解压（覆盖，避免旧文件导致的结构异常）
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
+                # 2020解压方式核心4：不覆盖解压
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $false)
             }
             $current++
             $percent = [math]::Round(($current / $total) * 100, 1)
@@ -274,20 +274,12 @@ function Unzip-File {
         # 释放压缩包句柄
         $zipFile.Dispose()
 
-        Write-Host "`n✅ 解压完成！" -ForegroundColor Green
+        Write-Host "`n✅ 解压完成！（采用2020版本解压方式）" -ForegroundColor Green
         
-        # 自动删除C盘压缩包
+        # 自动删除C盘压缩包（保留通用逻辑）
         if (Test-Path $ZipPath -PathType Leaf) {
             Remove-Item $ZipPath -Force
             Write-Host "🗑️ 已自动删除压缩包" -ForegroundColor Green
-        }
-
-        # 解压后校验关键文件（确保和25版本结构一致）
-        $checkFiles = @($SetupFilePath, $DataDirPath, $SourceAcadExe)
-        foreach ($file in $checkFiles) {
-            if (-not (Test-Path $file)) {
-                Write-Host "⚠️ 解压后未找到关键文件：$file（可能压缩包结构异常）`n" -ForegroundColor Yellow
-            }
         }
     }
     catch {
@@ -297,52 +289,61 @@ function Unzip-File {
     }
 }
 
-# ===================== 核心安装流程 ======================
+# ===================== 核心安装流程（统一逻辑）=====================
 try {
     Write-Host "`n==================================================" -ForegroundColor Green
     Write-Host "=============== 🔄 启动AutoCAD $($cfg.Version) 安装流程 ===============" -ForegroundColor Green
     Write-Host "==================================================`n" -ForegroundColor Green
 
-    # 1. 强制重新下载解压（避免旧文件干扰，确保结构正确）
-    Write-Host "🔍 检测到版本结构统一要求，强制重新下载解压...`n" -ForegroundColor Cyan
+    # 1. 检测本地文件是否完整（2020方式：存在即跳过下载解压）
+    Write-Host "🔍 检测本地安装文件...`n" -ForegroundColor Cyan
     $skipDownload = $false
+    if ((Test-Path $SetupFilePath) -and (Test-Path $DataDirPath)) {
+        $dataItems = Get-ChildItem -Path $DataDirPath -Recurse -ErrorAction SilentlyContinue
+        if ($dataItems -and $dataItems.Count -gt 0) {
+            Write-Host "✅ 检测到完整安装文件，跳过下载+解压`n" -ForegroundColor Green
+            $skipDownload = $true
+        }
+    }
 
-    # 2. 下载+解压
-    # 检测磁盘空间
-    $diskInfo = Check-DiskSpace -CMin $cfg.CMinSpace -DMin $cfg.DMinSpace
-    Write-Host "🔍 磁盘空间检测结果：C盘剩余 $($diskInfo.C) GB | D盘剩余 $($diskInfo.D) GB`n" -ForegroundColor Cyan
+    # 2. 下载+解压（仅本地文件不完整时执行，统一用2020解压方式）
+    if (-not $skipDownload) {
+        # 检测磁盘空间
+        $diskInfo = Check-DiskSpace -CMin $cfg.CMinSpace -DMin $cfg.DMinSpace
+        Write-Host "🔍 磁盘空间检测结果：C盘剩余 $($diskInfo.C) GB | D盘剩余 $($diskInfo.D) GB`n" -ForegroundColor Cyan
 
-    # 下载文件（带预校验）
-    Download-File -Url $cfg.DownloadUrl -SavePath $ZipPath -SizeEst $cfg.FileSizeEst
+        # 下载文件
+        if (-not (Test-Path $ZipPath -PathType Leaf)) {
+            Download-File -Url $cfg.DownloadUrl -SavePath $ZipPath -SizeEst $cfg.FileSizeEst
+        }
+        else {
+            Write-Host "✅ 本地已存在压缩包，跳过下载`n" -ForegroundColor Green
+        }
 
-    # 解压文件（强制清空目标目录，完整解压）
-    Unzip-File -ZipPath $ZipPath -FinalDir $cfg.InstallDir
+        # 统一调用2020解压方式
+        Unzip-File -ZipPath $ZipPath -FinalDir $cfg.InstallDir
+    }
 
-    # 3. 安装前验证（严格匹配25版本结构）
+    # 3. 安装前验证（适配各版本配置）
     Write-Host "==================================================" -ForegroundColor Cyan
     Write-Host "=============== 🔍 安装前文件验证 ===============" -ForegroundColor Cyan
     Write-Host "==================================================`n" -ForegroundColor Cyan
     
-    # 验证image目录
+    # 验证数据目录（各版本用自己的DataDir配置）
     if (-not (Test-Path $DataDirPath -PathType Container)) {
-        throw "❌ 未找到image目录（$DataDirPath），压缩包结构不符合25版本规范"
+        throw "❌ 未找到数据目录：$DataDirPath（请确认解压是否完整）"
     }
     $dataItems = Get-ChildItem -Path $DataDirPath -Recurse -ErrorAction SilentlyContinue
     if (-not $dataItems -or $dataItems.Count -eq 0) {
-        throw "❌ image目录为空，压缩包可能损坏或下载不完整"
+        throw "❌ 数据目录 $DataDirPath 为空（压缩包可能损坏）"
     }
 
-    # 验证安装脚本
+    # 验证安装文件（各版本用自己的SetupFile配置）
     if (-not (Test-Path $SetupFilePath -PathType Leaf)) {
-        throw "❌ 未找到安装脚本：$SetupFilePath"
-    }
-
-    # 验证激活文件
-    if ($cfg.ActivateExe -and -not (Test-Path $SourceAcadExe -PathType Leaf)) {
-        throw "❌ 未找到激活文件：$SourceAcadExe"
+        throw "❌ 未找到安装文件：$SetupFilePath"
     }
     
-    Write-Host "✅ 所有文件验证通过（匹配25版本结构），开始安装`n" -ForegroundColor Green
+    Write-Host "✅ 所有文件验证通过，开始安装`n" -ForegroundColor Green
 
     # 4. 启动安装程序
     Write-Host "🚀 启动AutoCAD $($cfg.Version) 安装程序...`n" -ForegroundColor Green
@@ -368,7 +369,7 @@ try {
         Write-Host "✅ 检测到AutoCAD $($cfg.Version) 主程序`n" -ForegroundColor Green
     }
 
-    # 6. 激活（仅2023+版本需要）
+    # 6. 激活（仅2023+版本需要，保留原有逻辑）
     if ($cfg.ActivateExe) {
         Write-Host "==================================================" -ForegroundColor Cyan
         Write-Host "=============== 🔐 开始激活AutoCAD $($cfg.Version) ===============" -ForegroundColor Cyan
@@ -388,7 +389,10 @@ try {
         }
     }
 
-    # 7. 最终完成提示（放大）
+    # 7. 清理安装文件（保留通用逻辑）
+    Remove-Item $SetupFilePath -Force -ErrorAction SilentlyContinue
+
+    # 最终完成提示（放大）
     Write-Host "==================================================" -ForegroundColor Green
     Write-Host "=============== 🎉 AutoCAD $($cfg.Version) 安装完成！ ===============" -ForegroundColor Green
     Write-Host "==================================================" -ForegroundColor Green
