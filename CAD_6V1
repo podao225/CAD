@@ -156,7 +156,7 @@ $cfg = $versionConfig[$versionChoice]
 $ZipPath = Join-Path $env:TEMP $cfg.ZipName
 $logPath = Join-Path $cfg.InstallDir "install_log.txt"
 
-# ===================== 通用函数定义（核心修复：自动识别压缩包根目录）=====================
+# ===================== 通用函数定义 ======================
 # 1. 磁盘空间检测函数
 function Check-DiskSpace {
     param(
@@ -178,7 +178,7 @@ function Check-DiskSpace {
     return @{ C = $cFreeGB; D = $dFreeGB }
 }
 
-# 2. 文件下载函数（保留基础逻辑）
+# 2. 文件下载函数
 function Download-File {
     param(
         [string]$Url,
@@ -222,7 +222,7 @@ function Download-File {
     Write-Host "`n✅ 下载完成！文件大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB`n" -ForegroundColor Green
 }
 
-# 3. 解压文件函数（核心修复：自动识别压缩包根文件夹，统一2020解压方式）
+# 3. 解压文件函数（自动识别压缩包根目录，2020解压方式）
 function Unzip-File {
     param(
         [string]$ZipPath,
@@ -230,7 +230,7 @@ function Unzip-File {
     )
     Write-Host "`n📦 正在解压中耐心等待..." -ForegroundColor Yellow
     try {
-        # 2020解压方式核心1：不提前清空目标目录，保留已有文件
+        # 2020解压方式：不清空目标目录
         if (-not (Test-Path $FinalDir)) {
             New-Item $FinalDir -ItemType Directory -Force | Out-Null
         }
@@ -241,7 +241,7 @@ function Unzip-File {
         $total = $entries.Count
         $current = 0
 
-        # 核心修复1：识别压缩包内的根文件夹（如AutoCAD_2024_Shell_YJ）
+        # 识别压缩包内的根文件夹
         $rootFolder = $null
         foreach ($entry in $entries) {
             if ($entry.FullName -match "^([^/\\]+)[/\\]" -and -not $rootFolder) {
@@ -252,14 +252,14 @@ function Unzip-File {
 
         foreach ($entry in $entries) {
             if (-not [string]::IsNullOrEmpty($entry.Name)) {
-                # 核心修复2：如果有根文件夹，跳过该层级，直接解压到目标目录
+                # 跳过根文件夹层级，直接解压到目标目录
                 $targetRelativePath = $entry.FullName
                 if ($rootFolder -and $targetRelativePath.StartsWith("$rootFolder/")) {
                     $targetRelativePath = $targetRelativePath.Substring($rootFolder.Length + 1)
                 }
                 $targetPath = Join-Path -Path $FinalDir -ChildPath $targetRelativePath
                 
-                # 2020解压方式核心3：跳过已存在文件，不覆盖
+                # 2020解压方式：跳过已存在文件，不覆盖
                 if (Test-Path -Path $targetPath -PathType Any) {
                     $current++
                     $percent = [math]::Round(($current / $total) * 100, 1)
@@ -267,13 +267,13 @@ function Unzip-File {
                     continue
                 }
 
-                # 创建目标目录（如果不存在）
+                # 创建目标目录
                 $targetDirectory = Split-Path -Path $targetPath -Parent
                 if (-not (Test-Path -Path $targetDirectory)) {
                     [System.IO.Directory]::CreateDirectory($targetDirectory) | Out-Null
                 }
 
-                # 2020解压方式核心4：不覆盖解压
+                # 不覆盖解压
                 [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $false)
             }
             $current++
@@ -281,12 +281,11 @@ function Unzip-File {
             Write-Host "`r解压进度：$percent% ($current/$total)" -NoNewline
         }
         
-        # 释放压缩包句柄
         $zipFile.Dispose()
 
-        Write-Host "`n✅ 解压完成！（采用2020版本解压方式，已自动适配压缩包根目录）" -ForegroundColor Green
+        Write-Host "`n✅ 解压完成！（采用2020版本解压方式，已适配压缩包根目录）" -ForegroundColor Green
         
-        # 自动删除C盘压缩包
+        # 删除压缩包
         if (Test-Path $ZipPath -PathType Leaf) {
             Remove-Item $ZipPath -Force
             Write-Host "🗑️ 已自动删除压缩包" -ForegroundColor Green
@@ -299,50 +298,38 @@ function Unzip-File {
     }
 }
 
-# 4. 自动修正文件路径函数（适配解压后的实际路径）
-function Get-CorrectFilePath {
+# 4. 检查一级目录文件/文件夹（核心：只查根目录）
+function Test-RootDirItem {
     param(
         [string]$BaseDir,
-        [string]$FileName
+        [string]$ItemName
     )
-    # 先检查直接路径
-    $directPath = Join-Path $BaseDir $FileName
-    if (Test-Path $directPath) {
-        return $directPath
-    }
-    # 再检查压缩包根文件夹内的路径
-    $rootFolders = Get-ChildItem -Path $BaseDir -Directory -ErrorAction SilentlyContinue
-    foreach ($folder in $rootFolders) {
-        $folderPath = Join-Path $folder.FullName $FileName
-        if (Test-Path $folderPath) {
-            return $folderPath
-        }
-    }
-    # 未找到返回空
-    return $null
+    # 只检查BaseDir根目录下是否存在该项目（不查深层）
+    $itemPath = Join-Path $BaseDir $ItemName
+    return Test-Path $itemPath
 }
 
-# ===================== 核心安装流程（适配路径修正）=====================
+# ===================== 核心安装流程 ======================
 try {
     Write-Host "`n==================================================" -ForegroundColor Green
     Write-Host "=============== 🔄 启动AutoCAD $($cfg.Version) 安装流程 ===============" -ForegroundColor Green
     Write-Host "==================================================`n" -ForegroundColor Green
 
-    # 1. 检测本地文件是否完整（适配路径修正）
-    Write-Host "🔍 检测本地安装文件...`n" -ForegroundColor Cyan
+    # 1. 检测本地文件（仅查根目录）
+    Write-Host "🔍 检测本地安装文件（仅验证根目录结构）...`n" -ForegroundColor Cyan
     $skipDownload = $false
 
-    # 修正安装文件和数据目录路径
-    $SetupFilePath = Get-CorrectFilePath -BaseDir $cfg.InstallDir -FileName $cfg.SetupFile
-    $DataDirPath = Get-CorrectFilePath -BaseDir $cfg.InstallDir -FileName $cfg.DataDir
-    $SourceAcadExe = Get-CorrectFilePath -BaseDir $cfg.InstallDir -FileName "acad.exe"
+    # 只检查InstallDir根目录下的关键项
+    $isDataDirExist = Test-RootDirItem -BaseDir $cfg.InstallDir -ItemName $cfg.DataDir
+    $isSetupFileExist = Test-RootDirItem -BaseDir $cfg.InstallDir -ItemName $cfg.SetupFile
 
-    if ($SetupFilePath -and $DataDirPath) {
-        $dataItems = Get-ChildItem -Path $DataDirPath -Recurse -ErrorAction SilentlyContinue
-        if ($dataItems -and $dataItems.Count -gt 0) {
-            Write-Host "✅ 检测到完整安装文件，跳过下载+解压`n" -ForegroundColor Green
-            $skipDownload = $true
-        }
+    if ($isDataDirExist -and $isSetupFileExist) {
+        Write-Host "✅ 检测到根目录下存在 $($cfg.DataDir) 文件夹和 $($cfg.SetupFile)，跳过下载+解压`n" -ForegroundColor Green
+        $skipDownload = $true
+        # 直接赋值根目录路径
+        $SetupFilePath = Join-Path $cfg.InstallDir $cfg.SetupFile
+        $DataDirPath = Join-Path $cfg.InstallDir $cfg.DataDir
+        $SourceAcadExe = Join-Path $cfg.InstallDir "acad.exe"
     }
 
     # 2. 下载+解压（仅本地文件不完整时执行）
@@ -359,35 +346,29 @@ try {
             Write-Host "✅ 本地已存在压缩包，跳过下载`n" -ForegroundColor Green
         }
 
-        # 解压文件（自动适配根目录）
+        # 解压文件
         Unzip-File -ZipPath $ZipPath -FinalDir $cfg.InstallDir
 
-        # 解压后重新修正路径
-        $SetupFilePath = Get-CorrectFilePath -BaseDir $cfg.InstallDir -FileName $cfg.SetupFile
-        $DataDirPath = Get-CorrectFilePath -BaseDir $cfg.InstallDir -FileName $cfg.DataDir
-        $SourceAcadExe = Get-CorrectFilePath -BaseDir $cfg.InstallDir -FileName "acad.exe"
+        # 解压后赋值根目录路径
+        $SetupFilePath = Join-Path $cfg.InstallDir $cfg.SetupFile
+        $DataDirPath = Join-Path $cfg.InstallDir $cfg.DataDir
+        $SourceAcadExe = Join-Path $cfg.InstallDir "acad.exe"
     }
 
-    # 3. 安装前验证（强化提示）
+    # 3. 安装前文件验证（仅验证根目录结构，不查深层）
     Write-Host "==================================================" -ForegroundColor Cyan
-    Write-Host "=============== 🔍 安装前文件验证 ===============" -ForegroundColor Cyan
+    Write-Host "=============== 🔍 安装前文件验证（仅根目录） ===============" -ForegroundColor Cyan
     Write-Host "==================================================`n" -ForegroundColor Cyan
     
-    # 验证数据目录
-    if (-not $DataDirPath -or -not (Test-Path $DataDirPath -PathType Container)) {
-        throw "❌ 未找到数据目录：$($cfg.DataDir)（实际查找路径：$cfg.InstallDir 及子文件夹）"
+    # 仅验证根目录下是否存在指定文件夹/文件
+    if (-not (Test-RootDirItem -BaseDir $cfg.InstallDir -ItemName $cfg.DataDir)) {
+        throw "❌ 根目录 $($cfg.InstallDir) 下未找到 $($cfg.DataDir) 文件夹"
     }
-    $dataItems = Get-ChildItem -Path $DataDirPath -Recurse -ErrorAction SilentlyContinue
-    if (-not $dataItems -or $dataItems.Count -eq 0) {
-        throw "❌ 数据目录 $DataDirPath 为空（压缩包可能损坏）"
-    }
-
-    # 验证安装文件
-    if (-not $SetupFilePath -or -not (Test-Path $SetupFilePath -PathType Leaf)) {
-        throw "❌ 未找到安装文件：$($cfg.SetupFile)（实际查找路径：$cfg.InstallDir 及子文件夹）"
+    if (-not (Test-RootDirItem -BaseDir $cfg.InstallDir -ItemName $cfg.SetupFile)) {
+        throw "❌ 根目录 $($cfg.InstallDir) 下未找到 $($cfg.SetupFile) 文件"
     }
     
-    Write-Host "✅ 所有文件验证通过（实际数据目录：$DataDirPath）`n" -ForegroundColor Green
+    Write-Host "✅ 根目录验证通过：`n   - 存在 $($cfg.DataDir) 文件夹`n   - 存在 $($cfg.SetupFile) 文件`n" -ForegroundColor Green
 
     # 4. 启动安装程序
     Write-Host "🚀 启动AutoCAD $($cfg.Version) 安装程序...`n" -ForegroundColor Green
@@ -418,7 +399,7 @@ try {
         Write-Host "==================================================" -ForegroundColor Cyan
         Write-Host "=============== 🔐 开始激活AutoCAD $($cfg.Version) ===============" -ForegroundColor Cyan
         Write-Host "==================================================`n" -ForegroundColor Cyan
-        if ($SourceAcadExe) {
+        if (Test-RootDirItem -BaseDir $cfg.InstallDir -ItemName "acad.exe") {
             $exeDir = Split-Path $cfg.ExePath -Parent
             if (-not (Test-Path $exeDir)) { New-Item $exeDir -ItemType Directory -Force | Out-Null }
             
@@ -429,16 +410,16 @@ try {
             Remove-Item $SourceAcadExe -Force -ErrorAction SilentlyContinue
         }
         else {
-            Write-Host "⚠️ 未找到激活文件（acad.exe），跳过激活`n" -ForegroundColor Yellow
+            Write-Host "⚠️ 根目录下未找到激活文件（acad.exe），跳过激活`n" -ForegroundColor Yellow
         }
     }
 
     # 7. 清理安装文件
-    if ($SetupFilePath) {
+    if (Test-Path $SetupFilePath) {
         Remove-Item $SetupFilePath -Force -ErrorAction SilentlyContinue
     }
 
-    # 最终完成提示（放大）
+    # 最终完成提示
     Write-Host "==================================================" -ForegroundColor Green
     Write-Host "=============== 🎉 AutoCAD $($cfg.Version) 安装完成！ ===============" -ForegroundColor Green
     Write-Host "==================================================" -ForegroundColor Green
