@@ -71,7 +71,7 @@ do {
 # ========== 清屏3：选择版本后（版本输入完成后） ==========
 Clear-Host
 
-# ===================== 版本配置参数（区分检测逻辑）=====================
+# ===================== 版本配置参数（保留各版本独有配置）=====================
 $versionConfig = @{
     "1" = @{
         Version = "2020"
@@ -84,8 +84,7 @@ $versionConfig = @{
         DMinSpace = 10 # D盘最小空间(GB)
         ExePath = "D:\Autodesk\AutoCAD 2020\acad.exe"
         FileSizeEst = 1.88 * 1GB # 预估文件大小
-        CheckExeAfterInstall = $false # 20版本：不检测主程序
-        WaitMinutes = 0 # 20版本：无需等待
+        ActivateExe = $false # 20/21版本无需替换激活
     }
     "2" = @{
         Version = "2021"
@@ -98,8 +97,7 @@ $versionConfig = @{
         DMinSpace = 10
         ExePath = "D:\Autodesk\AutoCAD 2021\acad.exe"
         FileSizeEst = 2 * 1GB
-        CheckExeAfterInstall = $false # 21版本：不检测主程序
-        WaitMinutes = 0 # 21版本：无需等待
+        ActivateExe = $false # 20/21版本无需替换激活
     }
     "3" = @{
         Version = "2023"
@@ -112,9 +110,7 @@ $versionConfig = @{
         DMinSpace = 10
         ExePath = "D:\Autodesk\AutoCAD 2023\acad.exe"
         FileSizeEst = 3.58 * 1GB
-        ActivateExe = $true # 需要替换acad.exe激活
-        CheckExeAfterInstall = $true # 23版本：检测主程序
-        WaitMinutes = 8 # 23版本：等待8分钟
+        ActivateExe = $true # 23+版本需要替换acad.exe激活
     }
     "4" = @{
         Version = "2024"
@@ -128,8 +124,6 @@ $versionConfig = @{
         ExePath = "D:\Autodesk\AutoCAD 2024\acad.exe"
         FileSizeEst = 2.93 * 1GB
         ActivateExe = $true
-        CheckExeAfterInstall = $true # 24版本：检测主程序
-        WaitMinutes = 8 # 24版本：等待8分钟
     }
     "5" = @{
         Version = "2025"
@@ -143,8 +137,6 @@ $versionConfig = @{
         ExePath = "D:\Autodesk\AutoCAD 2025\acad.exe"
         FileSizeEst = 3.12 * 1GB
         ActivateExe = $true
-        CheckExeAfterInstall = $true # 25版本：检测主程序
-        WaitMinutes = 10 # 25版本：等待10分钟
     }
     "6" = @{
         Version = "2026"
@@ -158,8 +150,6 @@ $versionConfig = @{
         ExePath = "D:\Autodesk\AutoCAD 2026\acad.exe"
         FileSizeEst = 3.25 * 1GB
         ActivateExe = $true
-        CheckExeAfterInstall = $true # 26版本：检测主程序
-        WaitMinutes = 10 # 26版本：等待10分钟
     }
 }
 
@@ -321,58 +311,6 @@ function Test-RootDirItem {
     return Test-Path $itemPath
 }
 
-# 5. 安装完成检测函数（区分版本逻辑）
-function Check-InstallCompletion {
-    param(
-        [bool]$CheckExe,
-        [string]$ExePath,
-        [int]$WaitMinutes,
-        [string]$Version
-    )
-    if (-not $CheckExe) {
-        # 20/21版本逻辑：不检测主程序，直接判定安装完成
-        Write-Host "🔍 AutoCAD $Version 安装程序已启动，无需检测主程序`n" -ForegroundColor Cyan
-        Write-Host "✅ AutoCAD $Version 安装流程完成`n" -ForegroundColor Green
-        return $true
-    }
-    else {
-        # 23/24/25/26版本逻辑：检测主程序，按版本配置等待时长
-        $installOk = $false
-        $waitSeconds = $WaitMinutes * 60
-        $waitCount = 0
-        $checkInterval = 5 # 每5秒检测一次
-        $maxCheckTimes = [math]::Floor($waitSeconds / $checkInterval)
-
-        Write-Host "🔍 等待AutoCAD $Version 安装完成（最长等待 $WaitMinutes 分钟），检测主程序...`n" -ForegroundColor Cyan
-        do {
-            Start-Sleep -Seconds $checkInterval
-            $waitCount++
-            $elapsedMinutes = [math]::Round(($waitCount * $checkInterval) / 60, 1)
-            Write-Host "`r已等待 $elapsedMinutes 分钟 / 最长 $WaitMinutes 分钟" -NoNewline -ForegroundColor Cyan
-            
-            if (Test-Path $ExePath) { 
-                $installOk = $true 
-                Write-Host "" # 换行
-            }
-        } while (-not $installOk -and $waitCount -lt $maxCheckTimes)
-
-        if ($installOk) {
-            Write-Host "✅ 检测到AutoCAD $Version 主程序（$ExePath）`n" -ForegroundColor Green
-            return $true
-        }
-        else {
-            Write-Host "`n⚠️ 超过 $WaitMinutes 分钟未检测到主程序（$ExePath）`n" -ForegroundColor Yellow
-            $continue = Read-Host "是否强制继续后续操作？(Y/N)"
-            if ($continue -match "^[Yy]$") {
-                return $true
-            }
-            else {
-                return $false
-            }
-        }
-    }
-}
-
 # ===================== 核心安装流程 ======================
 try {
     Write-Host "`n==================================================" -ForegroundColor Green
@@ -434,43 +372,120 @@ try {
     
     Write-Host "✅ 根目录验证通过：`n   - 存在 $($cfg.DataDir) 文件夹`n   - 存在 $($cfg.SetupFile) 文件`n" -ForegroundColor Green
 
-    # 4. 启动安装程序
+    # 4. 启动安装程序（核心修改：区分20/21和23+版本的检测逻辑）
     Write-Host "🚀 启动AutoCAD $($cfg.Version) 安装程序...`n" -ForegroundColor Green
-    Start-Process "cmd.exe" "/c start """" ""$SetupFilePath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
-    Write-Host "🎉 安装程序启动完成！`n" -ForegroundColor Green
+    
+    # ======== 版本分支：20/21版本逻辑 ========
+    if ($cfg.Version -in @("2020", "2021")) {
+        # 启动安装快捷方式
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupFilePath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
+        Write-Host "🎉 安装程序启动完成！`n" -ForegroundColor Green
+        
+        # 检测主程序是否生成（直接检测，无进程等待）
+        $installOk = $false
+        $waitCount = 0
+        Write-Host "🔍 等待安装完成，检测主程序...`n" -ForegroundColor Cyan
+        do {
+            Start-Sleep -Seconds 5
+            $waitCount++
+            if (Test-Path $cfg.ExePath) { $installOk = $true }
+        } while (-not $installOk -and $waitCount -lt 48) # 最多等待4分钟
 
-    # 5. 安装完成检测（核心：区分版本逻辑）
-    $installCompleted = Check-InstallCompletion -CheckExe $cfg.CheckExeAfterInstall `
-                                               -ExePath $cfg.ExePath `
-                                               -WaitMinutes $cfg.WaitMinutes `
-                                               -Version $cfg.Version
-    if (-not $installCompleted) {
-        throw "用户选择终止操作"
+        if (-not $installOk) {
+            Write-Host "⚠️ 未检测到主程序（$($cfg.ExePath)）`n" -ForegroundColor Yellow
+            $continue = Read-Host "是否强制继续后续操作？(Y/N)"
+            if ($continue -notmatch "^[Yy]$") { exit 1 }
+        }
+        else {
+            Write-Host "✅ 检测到AutoCAD $($cfg.Version) 主程序`n" -ForegroundColor Green
+        }
+
+        # 清理安装文件
+        if (Test-Path $SetupFilePath) {
+            Remove-Item $SetupFilePath -Force -ErrorAction SilentlyContinue
+            Write-Host "🗑️ 已自动删除安装快捷方式`n" -ForegroundColor Green
+        }
+    }
+    # ======== 版本分支：23/24/25/26版本逻辑 ========
+    elseif ($cfg.Version -in @("2023", "2024", "2025", "2026")) {
+        # 启动安装批处理并保留进程句柄
+        $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupFilePath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
+
+        # 第一步：等待Installer.exe进程完全结束（静默等待，最多30分钟）
+        $installerWaitCount = 0
+        $maxInstallerWait = 360  # 360*5=1800秒=30分钟
+        do {
+            Start-Sleep -Seconds 5
+            $installerProcess = Get-Process -Name "Installer" -ErrorAction SilentlyContinue
+            $installerWaitCount++
+            
+            # 超时保护
+            if ($installerWaitCount -ge $maxInstallerWait) {
+                Write-Host "`n⚠️ Installer进程等待超时，强制继续检测" -ForegroundColor Yellow
+                break
+            }
+        } while ($installerProcess -ne $null)
+
+        # 第二步：检测acad.exe是否生成（最多20分钟，超时可强制激活）
+        Write-Host "🔍 安装检测中...`n" -ForegroundColor Cyan
+        $cadInstalled = $false
+        $fileWaitCount = 0
+        $maxFileWait = 240  # 240*5=1200秒=20分钟
+        do {
+            Start-Sleep -Seconds 5
+            $fileWaitCount++
+            
+            # 核心检测：目标目录是否存在acad.exe文件
+            if (Test-Path $cfg.ExePath -PathType Leaf) {
+                $cadInstalled = $true
+            }
+
+            # 超时保护
+            if ($fileWaitCount -ge $maxFileWait) {
+                Write-Host "`n❌ 检测超时：$($cfg.ExePath) 文件未找到" -ForegroundColor Red
+                $userChoice = Read-Host "是否强制继续激活流程？(Y/N)"
+                if ($userChoice -match "^[Yy]$") {
+                    $cadInstalled = $true
+                } else {
+                    exit 1
+                }
+            }
+        } while (-not $cadInstalled)
+
+        Write-Host "✅ 安装检测完成`n" -ForegroundColor Green
+        
+        # 清理安装批处理文件
+        if (Test-Path $SetupFilePath -PathType Leaf) {
+            Remove-Item $SetupFilePath -Force
+            Write-Host "🗑️ 已自动删除安装批处理文件`n" -ForegroundColor Green
+        }
     }
 
-    # 6. 激活（仅23+版本需要）
+    # 5. 激活流程（仅23+版本需要，已通过ActivateExe配置控制）
     if ($cfg.ActivateExe) {
         Write-Host "==================================================" -ForegroundColor Cyan
         Write-Host "=============== 🔐 开始激活AutoCAD $($cfg.Version) ===============" -ForegroundColor Cyan
         Write-Host "==================================================`n" -ForegroundColor Cyan
+        
         if (Test-RootDirItem -BaseDir $cfg.InstallDir -ItemName "acad.exe") {
             $exeDir = Split-Path $cfg.ExePath -Parent
-            if (-not (Test-Path $exeDir)) { New-Item $exeDir -ItemType Directory -Force | Out-Null }
+            if (-not (Test-Path $exeDir)) { 
+                New-Item $exeDir -ItemType Directory -Force | Out-Null 
+            }
             
             # 备份原文件+替换激活文件
-            if (Test-Path $cfg.ExePath) { Copy-Item $cfg.ExePath "$($cfg.ExePath).bak" -Force }
+            if (Test-Path $cfg.ExePath) { 
+                Copy-Item $cfg.ExePath "$($cfg.ExePath).bak" -Force 
+            }
             Copy-Item $SourceAcadExe $cfg.ExePath -Force
             Write-Host "✅ 激活完成！`n" -ForegroundColor Green
+            
+            # 清理激活源文件
             Remove-Item $SourceAcadExe -Force -ErrorAction SilentlyContinue
         }
         else {
             Write-Host "⚠️ 根目录下未找到激活文件（acad.exe），跳过激活`n" -ForegroundColor Yellow
         }
-    }
-
-    # 7. 清理安装文件
-    if (Test-Path $SetupFilePath) {
-        Remove-Item $SetupFilePath -Force -ErrorAction SilentlyContinue
     }
 
     # 最终完成提示
