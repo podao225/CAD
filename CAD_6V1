@@ -1,12 +1,9 @@
-# ===================== AutoCAD 多版本安装程序 =====================
+# ===================== AutoCAD 六合一安装程序 =====================
 # 兼容编码
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
-# 核心修改：启动时将666复制到剪贴板
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.Clipboard]::SetText("666")
-Write-Host "✅ 666" -ForegroundColor Green
+# 移除：剪贴板复制666的功能（完全删除该段代码）
 
 # 兼容TLS
 try {
@@ -23,7 +20,7 @@ if (-not $isAdmin) {
     exit
 }
 
-# ========== 核心配置：所有版本的差异化参数 ==========
+# ========== 核心配置：六版本差异化参数 ==========
 $CADVersionsConfig = @{
     "2020" = @{
         CMinSpaceGB      = 2
@@ -486,7 +483,7 @@ function Install-CAD {
             Start-Sleep -Seconds 3
         }
         else {
-            # 2020/2021版本：直接运行lnk（原版逻辑，未改动）
+            # 2020/2021版本：直接运行lnk（原版逻辑）
             Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$($VersionConfig.InstallFilePath)"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
         }
 
@@ -536,11 +533,11 @@ function Install-CAD {
     exit 0
 }
 
-# ========== 界面函数：版本选择菜单 ==========
+# ========== 界面函数：版本选择菜单（仅单次显示） ==========
 function Show-VersionMenu {
     Clear-Host
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "          AutoCAD 多版本安装程序           " -ForegroundColor Cyan
+    Write-Host "          AutoCAD 六合一安装程序           " -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "请选择要安装的AutoCAD版本：" -ForegroundColor White
     $index = 1
@@ -555,9 +552,9 @@ function Show-VersionMenu {
     return $versionList
 }
 
-# ========== 主程序入口 ==========
+# ========== 主程序入口（无循环，单次执行） ==========
 function Main {
-    # 显示版本菜单（仅显示一次，移除循环）
+    # 仅显示一次版本菜单
     $versionList = Show-VersionMenu
     $choice = Read-Host "请输入选项编号"
 
