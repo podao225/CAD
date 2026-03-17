@@ -209,9 +209,17 @@ try {
     Write-Host "          开始安装 AutoCAD $version" -ForegroundColor Cyan
     Write-Host "==================================================" -ForegroundColor Cyan
     
-    # 修复点1：解决Start-Process参数解析错误（给日志路径加转义，兼容旧版PowerShell）
+    # ✅ 修复：用数组传参，彻底解决旧版PowerShell引号解析问题
     Write-Host "🔍 正在启动AutoCAD安装，请稍候..." -ForegroundColor White
-    $cmdArgs = "/c start """" ""$SetupLnkPath"" >> ""$logPath"" 2>&1"
+    $cmdArgs = @(
+        "/c",
+        "start",
+        '""',
+        "`"$SetupLnkPath`"",
+        ">>",
+        "`"$logPath`"",
+        "2>&1"
+    )
     Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -Verb RunAs -NoNewWindow -ErrorAction Stop
 
     # 核心配置
@@ -226,7 +234,6 @@ try {
     do {
         $setupProc = Get-Process -Name Setup -ErrorAction SilentlyContinue
         if ($setupProc) {
-            # 修复点2：elapsedMinutes显示为小数，避免整数截断导致的显示异常
             $elapsedDisplay = [math]::Round($elapsedMinutes, 1)
             Write-Host "`r⏳ 初始化进度中... 已等待 $elapsedDisplay 分钟" -NoNewline -ForegroundColor White
             Start-Sleep -Seconds $checkInterval
@@ -244,47 +251,38 @@ try {
     $elapsedMinutes = 0
     Write-Host "`n📌 【安装阶段2】组件安装中..." -ForegroundColor Yellow
     do {
-        # 检测组件安装核心进程（对应Autodesk component弹窗）
         $compProc = Get-Process -Name Installer,MSIEXEC -ErrorAction SilentlyContinue
-        # 修复点3：Test-Path加ErrorAction，避免路径不存在时报错中断
         $fileExists = Test-Path $cadInstallPath -PathType Leaf -ErrorAction SilentlyContinue
 
-        # 实时状态提示（更友好）
         $procStatus = if ($compProc) { "组件安装进行中 📦" } else { "组件安装已完成 ✔" }
         $fileStatus = if ($fileExists) { "主程序已生成 📄" } else { "主程序未生成" }
-        # 修复点4：阶段2同样优化时间显示
         $elapsedDisplay = [math]::Round($elapsedMinutes, 1)
         Write-Host "`r⏳ 已等待 $elapsedDisplay 分钟 | $procStatus | $fileStatus" -NoNewline -ForegroundColor White
 
-        # 判定安装完成：组件进程结束 + D盘文件存在
         if (-not $compProc -and $fileExists) {
             $installCompleted = $true
             Write-Host "`n`n✅ 【安装完成】AutoCAD $version 已成功安装到D盘！" -ForegroundColor Green
             Write-Host "📂 安装路径：$cadInstallPath" -ForegroundColor White
         }
 
-        # 未完成则继续等待
         if (-not $installCompleted) {
             Start-Sleep -Seconds $checkInterval
             $elapsedMinutes += $checkInterval/60
         }
 
-        # 超时判定（核心修改：人工选择继续/退出）
         if ($elapsedMinutes -ge $totalMaxWait -and -not $installCompleted) {
             Write-Host "`n`n⏰ 检测超时（已等待30分钟），请手动确认安装状态..." -ForegroundColor DarkYellow
-            # 显示当前检测结果
             if ($fileExists) {
                 Write-Host "✅ 当前检测：已找到AutoCAD主程序" -ForegroundColor Green
             } else {
                 Write-Host "❌ 当前检测：未找到主程序 $cadInstallPath" -ForegroundColor Red
             }
-            # 人工选择
             do {
                 $userChoice = Read-Host "`n请选择操作 [1=继续检测 / 2=安装完成（继续） / 3=退出程序]"
                 switch ($userChoice) {
                     "1" {
                         Write-Host "🔄 继续检测，重置等待计时..." -ForegroundColor Cyan
-                        $elapsedMinutes = 0  # 重置计时，继续检测
+                        $elapsedMinutes = 0
                         break
                     }
                     "2" {
@@ -301,15 +299,13 @@ try {
                         Write-Host "⚠️ 输入无效，请输入 1/2/3" -ForegroundColor Red
                     }
                 }
-            } while ($userChoice -notin @("1","2","3"))  # 直到输入有效选项
+            } while ($userChoice -notin @("1","2","3"))
         }
     } while (-not $installCompleted)
 
-    # 保留原有安装完成后的提示和清理逻辑
     Write-Host "`n🎉 安装完成！" -ForegroundColor Green
     Write-Host "ℹ️ 日志已保存到：$logPath" -ForegroundColor Cyan
 
-    # 安装完成后自动删除 666.lnk
     if (Test-Path $SetupLnkPath -PathType Leaf) {
         Remove-Item $SetupLnkPath -Force
         Write-Host "🗑️ 已自动打扫安装文件" -ForegroundColor Green
