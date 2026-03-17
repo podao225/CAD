@@ -83,7 +83,7 @@ $versionConfig = @{
         CMinSpace = 2  # C盘最小空间(GB)
         DMinSpace = 10 # D盘最小空间(GB)
         ExePath = "D:\Autodesk\AutoCAD 2020\acad.exe"
-        FileSizeEst = 1.88 * 1GB # 预估文件大小
+        FileSizeEst = 1.76 * 1GB # 预估文件大小
         ActivateExe = $false # 20/21版本无需替换激活
     }
     "2" = @{
@@ -109,7 +109,7 @@ $versionConfig = @{
         CMinSpace = 4
         DMinSpace = 10
         ExePath = "D:\Autodesk\AutoCAD 2023\acad.exe"
-        FileSizeEst = 3.58 * 1GB
+        FileSizeEst = 3.54 * 1GB
         ActivateExe = $true # 23+版本需要替换acad.exe激活
     }
     "4" = @{
