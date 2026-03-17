@@ -1,4 +1,17 @@
-# ===================== 通用基础配置（所有版本共用）=====================
+# ===================== 控制台字体/显示优化（视觉放大）=====================
+# 设置控制台字体大小（字号16，窗口尺寸放大）
+try {
+    $console = $Host.UI.RawUI
+    $console.WindowSize = New-Object System.Management.Automation.Host.Size(140, 45) # 窗口尺寸放大
+    $console.BufferSize = New-Object System.Management.Automation.Host.Size(140, 1000) # 缓冲区
+    $font = $console.Font
+    $font.Size = 16 # 字号从默认12调大到16（更醒目）
+    $console.Font = $font
+}
+catch {
+    Write-Host "⚠️ 控制台字体调整失败，不影响脚本运行" -ForegroundColor Yellow
+}
+
 # 1. 兼容编码
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
@@ -18,8 +31,10 @@ if (-not $isAdmin) {
     exit
 }
 
-# 4. 通用：清理Windows Update重启项
-Write-Host "`n🧹 正在清理Windows Update重启项..." -ForegroundColor Cyan
+# 4. 通用：清理Windows Update重启项（放大提示文字）
+Write-Host "`n==================================================" -ForegroundColor Cyan
+Write-Host "=============== 🧹 清理Windows Update重启项 ===============" -ForegroundColor Cyan
+Write-Host "==================================================" -ForegroundColor Cyan
 $tempBatPath = Join-Path $env:TEMP "CleanWU_Reboot.bat"
 @"
 @echo off
@@ -27,25 +42,25 @@ reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Windows
 "@ | Out-File -FilePath $tempBatPath -Encoding ASCII
 Start-Process -FilePath "cmd.exe" -ArgumentList "/c ""$tempBatPath""" -Verb RunAs -Wait
 if (Test-Path $tempBatPath) { Remove-Item $tempBatPath -Force }
-Write-Host "✅ Windows Update重启项清理完成" -ForegroundColor Green
+Write-Host "✅ 重启项清理完成！`n" -ForegroundColor Green
 
-# 5. 版本选择交互
-Write-Host "`n=====================================" -ForegroundColor Cyan
-Write-Host "          AutoCAD 版本选择菜单" -ForegroundColor Cyan
-Write-Host "=====================================" -ForegroundColor Cyan
-Write-Host "1 - AutoCAD 2020"
-Write-Host "2 - AutoCAD 2021"
-Write-Host "3 - AutoCAD 2023"
-Write-Host "4 - AutoCAD 2024"
-Write-Host "5 - AutoCAD 2025"
-Write-Host "6 - AutoCAD 2026"
-Write-Host "=====================================" -ForegroundColor Cyan
+# 5. 版本选择交互（放大菜单文字）
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "=============== 📌 AutoCAD 版本选择菜单 ===============" -ForegroundColor Cyan
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "                    1 - AutoCAD 2020" -ForegroundColor White
+Write-Host "                    2 - AutoCAD 2021" -ForegroundColor White
+Write-Host "                    3 - AutoCAD 2023" -ForegroundColor White
+Write-Host "                    4 - AutoCAD 2024" -ForegroundColor White
+Write-Host "                    5 - AutoCAD 2025" -ForegroundColor White
+Write-Host "                    6 - AutoCAD 2026" -ForegroundColor White
+Write-Host "==================================================" -ForegroundColor Cyan
 
 # 循环获取有效版本选择
 do {
-    $versionChoice = Read-Host "请输入要安装的版本编号（1-6）"
+    $versionChoice = Read-Host "`n请输入要安装的版本编号（1-6）"
     if ($versionChoice -notin @("1","2","3","4","5","6")) {
-        Write-Host "❌ 输入无效！请输入 1-6 之间的数字" -ForegroundColor Red
+        Write-Host "❌ 输入无效！请输入 1-6 之间的数字 ❌" -ForegroundColor Red
     }
 } while ($versionChoice -notin @("1","2","3","4","5","6"))
 
@@ -166,7 +181,9 @@ function Download-File {
         [string]$SavePath,
         [long]$SizeEst
     )
-    Write-Host "`n📥 正在下载安装包..." -ForegroundColor Yellow
+    Write-Host "`n==================================================" -ForegroundColor Yellow
+    Write-Host "=============== 📥 开始下载AutoCAD $($cfg.Version) 安装包 ===============" -ForegroundColor Yellow
+    Write-Host "==================================================" -ForegroundColor Yellow
     
     $job = Start-Job -ScriptBlock {
         param($u, $p)
@@ -198,7 +215,7 @@ function Download-File {
     if (-not (Test-Path $SavePath) -or (Get-Item $SavePath).Length -eq 0) {
         throw "下载的文件为空或损坏"
     }
-    Write-Host "`n✅ 下载完成！大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB" -ForegroundColor Green
+    Write-Host "`n✅ 下载完成！文件大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB`n" -ForegroundColor Green
 }
 
 # 3. 解压文件函数
@@ -207,7 +224,9 @@ function Unzip-File {
         [string]$ZipPath,
         [string]$TargetDir
     )
-    Write-Host "`n📦 正在解压文件..." -ForegroundColor Yellow
+    Write-Host "==================================================" -ForegroundColor Yellow
+    Write-Host "=============== 📦 开始解压AutoCAD $($cfg.Version) 安装包 ===============" -ForegroundColor Yellow
+    Write-Host "==================================================" -ForegroundColor Yellow
     
     if (-not (Test-Path $TargetDir)) { New-Item $TargetDir -ItemType Directory -Force | Out-Null }
     
@@ -230,7 +249,7 @@ function Unzip-File {
             Write-Host "`r解压进度：$pct% ($current/$total)" -NoNewline
         }
         $zip.Dispose()
-        Write-Host "`n✅ 解压完成！" -ForegroundColor Green
+        Write-Host "`n✅ 解压完成！`n" -ForegroundColor Green
         Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
     }
     catch {
@@ -240,15 +259,17 @@ function Unzip-File {
 
 # ===================== 核心安装流程（统一逻辑）=====================
 try {
-    Write-Host "`n🔄 开始执行 AutoCAD $($cfg.Version) 安装流程..." -ForegroundColor Green
+    Write-Host "`n==================================================" -ForegroundColor Green
+    Write-Host "=============== 🔄 启动AutoCAD $($cfg.Version) 安装流程 ===============" -ForegroundColor Green
+    Write-Host "==================================================`n" -ForegroundColor Green
 
     # 1. 检测本地文件是否完整
-    Write-Host "`n🔍 检测本地文件..." -ForegroundColor Cyan
+    Write-Host "🔍 检测本地安装文件...`n" -ForegroundColor Cyan
     $skipDownload = $false
     if ((Test-Path $SetupFilePath) -and (Test-Path $DataDirPath)) {
         $dataItems = Get-ChildItem -Path $DataDirPath -Recurse -ErrorAction SilentlyContinue
         if ($dataItems -and $dataItems.Count -gt 0) {
-            Write-Host "✅ 检测到完整安装文件，跳过下载+解压" -ForegroundColor Green
+            Write-Host "✅ 检测到完整安装文件，跳过下载+解压`n" -ForegroundColor Green
             $skipDownload = $true
         }
     }
@@ -257,14 +278,14 @@ try {
     if (-not $skipDownload) {
         # 检测磁盘空间
         $diskInfo = Check-DiskSpace -CMin $cfg.CMinSpace -DMin $cfg.DMinSpace
-        Write-Host "`n🔍 磁盘剩余空间：C盘 $($diskInfo.C) GB | D盘 $($diskInfo.D) GB" -ForegroundColor Cyan
+        Write-Host "🔍 磁盘空间检测结果：C盘剩余 $($diskInfo.C) GB | D盘剩余 $($diskInfo.D) GB`n" -ForegroundColor Cyan
 
         # 下载文件
         if (-not (Test-Path $ZipPath -PathType Leaf)) {
             Download-File -Url $cfg.DownloadUrl -SavePath $ZipPath -SizeEst $cfg.FileSizeEst
         }
         else {
-            Write-Host "✅ 本地已存在压缩包，跳过下载" -ForegroundColor Green
+            Write-Host "✅ 本地已存在压缩包，跳过下载`n" -ForegroundColor Green
         }
 
         # 解压文件
@@ -272,22 +293,26 @@ try {
     }
 
     # 3. 安装前验证
-    Write-Host "`n🔍 安装前验证..." -ForegroundColor Cyan
+    Write-Host "==================================================" -ForegroundColor Cyan
+    Write-Host "=============== 🔍 安装前文件验证 ===============" -ForegroundColor Cyan
+    Write-Host "==================================================`n" -ForegroundColor Cyan
     if (-not (Test-Path $DataDirPath) -or !(Get-ChildItem $DataDirPath -Recurse -ErrorAction SilentlyContinue)) {
         throw "❌ 数据目录（$($cfg.DataDir)）异常或为空"
     }
     if (-not (Test-Path $SetupFilePath)) {
         throw "❌ 未找到安装文件：$($cfg.SetupFile)"
     }
-    Write-Host "✅ 验证通过，开始安装" -ForegroundColor Green
+    Write-Host "✅ 所有文件验证通过，开始安装`n" -ForegroundColor Green
 
     # 4. 启动安装程序
+    Write-Host "🚀 启动AutoCAD $($cfg.Version) 安装程序...`n" -ForegroundColor Green
     Start-Process "cmd.exe" "/c start """" ""$SetupFilePath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
-    Write-Host "`n🎉 安装程序启动完成！" -ForegroundColor Green
+    Write-Host "🎉 安装程序启动完成！`n" -ForegroundColor Green
 
     # 5. 检测安装结果
     $installOk = $false
     $waitCount = 0
+    Write-Host "🔍 等待安装完成，检测主程序...`n" -ForegroundColor Cyan
     do {
         Start-Sleep -Seconds 5
         $waitCount++
@@ -295,17 +320,19 @@ try {
     } while (-not $installOk -and $waitCount -lt 48) # 最多等待4分钟
 
     if (-not $installOk) {
-        Write-Host "`n⚠️ 未检测到主程序（$($cfg.ExePath)）" -ForegroundColor Yellow
+        Write-Host "⚠️ 未检测到主程序（$($cfg.ExePath)）`n" -ForegroundColor Yellow
         $continue = Read-Host "是否强制继续后续操作？(Y/N)"
         if ($continue -notmatch "^[Yy]$") { exit 1 }
     }
     else {
-        Write-Host "✅ 检测到AutoCAD $($cfg.Version) 主程序" -ForegroundColor Green
+        Write-Host "✅ 检测到AutoCAD $($cfg.Version) 主程序`n" -ForegroundColor Green
     }
 
     # 6. 激活（仅2023+版本需要）
     if ($cfg.ActivateExe) {
-        Write-Host "`n🔐 开始激活..." -ForegroundColor Cyan
+        Write-Host "==================================================" -ForegroundColor Cyan
+        Write-Host "=============== 🔐 开始激活AutoCAD $($cfg.Version) ===============" -ForegroundColor Cyan
+        Write-Host "==================================================`n" -ForegroundColor Cyan
         if (Test-Path $SourceAcadExe) {
             $exeDir = Split-Path $cfg.ExePath -Parent
             if (-not (Test-Path $exeDir)) { New-Item $exeDir -ItemType Directory -Force | Out-Null }
@@ -313,24 +340,26 @@ try {
             # 备份原文件+替换激活文件
             if (Test-Path $cfg.ExePath) { Copy-Item $cfg.ExePath "$($cfg.ExePath).bak" -Force }
             Copy-Item $SourceAcadExe $cfg.ExePath -Force
-            Write-Host "✅ 激活完成" -ForegroundColor Green
+            Write-Host "✅ 激活完成！`n" -ForegroundColor Green
             Remove-Item $SourceAcadExe -Force -ErrorAction SilentlyContinue
         }
         else {
-            Write-Host "⚠️ 未找到激活文件（acad.exe），跳过激活" -ForegroundColor Yellow
+            Write-Host "⚠️ 未找到激活文件（acad.exe），跳过激活`n" -ForegroundColor Yellow
         }
     }
 
     # 7. 清理安装文件
     Remove-Item $SetupFilePath -Force -ErrorAction SilentlyContinue
-    Remove-Item $MyInvocation.MyCommand.Definition -Force -ErrorAction SilentlyContinue
 
-    Write-Host "`n=====================================" -ForegroundColor Green
-    Write-Host "AutoCAD $($cfg.Version) 安装流程全部完成！" -ForegroundColor Green
-    Write-Host "=====================================" -ForegroundColor Green
+    # 最终完成提示（放大）
+    Write-Host "==================================================" -ForegroundColor Green
+    Write-Host "=============== 🎉 AutoCAD $($cfg.Version) 安装完成！ ===============" -ForegroundColor Green
+    Write-Host "==================================================" -ForegroundColor Green
 }
 catch {
-    Write-Host "`n❌ 安装失败：$($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "`n==================================================" -ForegroundColor Red
+    Write-Host "=============== ❌ 安装失败：$($_.Exception.Message) ❌ ===============" -ForegroundColor Red
+    Write-Host "==================================================`n" -ForegroundColor Red
     Read-Host "按任意键退出"
     exit 1
 }
