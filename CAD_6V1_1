@@ -265,7 +265,7 @@ function Unzip-File {
                 if (Test-Path -Path $targetPath -PathType Any) {
                     $current++
                     $percent = [math]::Round(($current / $total) * 100, 1)
-                    Write-Host "`r解压进度：$percent% ($current/$total) - 跳过已存在文件" -NoNewline
+                    Write-Host "`r解压进度：$percent% ($current/$total)" -NoNewline
                     continue
                 }
 
@@ -285,12 +285,12 @@ function Unzip-File {
         
         $zipFile.Dispose()
 
-        Write-Host "`n✅ 解压完成！（采用2020版本解压方式，已适配压缩包根目录）" -ForegroundColor Green
+        Write-Host "`n✅ 解压完成！" -ForegroundColor Green
         
         # 删除压缩包
         if (Test-Path $ZipPath -PathType Leaf) {
             Remove-Item $ZipPath -Force
-            Write-Host "🗑️ 已自动删除压缩包" -ForegroundColor Green
+            Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green
         }
     }
     catch {
@@ -318,7 +318,7 @@ try {
     Write-Host "==================================================`n" -ForegroundColor Green
 
     # 1. 检测本地文件（仅查根目录）
-    Write-Host "🔍 检测本地安装文件（仅验证根目录结构）...`n" -ForegroundColor Cyan
+    Write-Host "🔍 检测本地安装文件...`n" -ForegroundColor Cyan
     $skipDownload = $false
 
     # 只检查InstallDir根目录下的关键项
@@ -326,7 +326,7 @@ try {
     $isSetupFileExist = Test-RootDirItem -BaseDir $cfg.InstallDir -ItemName $cfg.SetupFile
 
     if ($isDataDirExist -and $isSetupFileExist) {
-        Write-Host "✅ 检测到根目录下存在 $($cfg.DataDir) 文件夹和 $($cfg.SetupFile)，跳过下载+解压`n" -ForegroundColor Green
+        Write-Host "✅ 检测到完整安装文件`n" -ForegroundColor Green
         $skipDownload = $true
         # 直接赋值根目录路径
         $SetupFilePath = Join-Path $cfg.InstallDir $cfg.SetupFile
@@ -359,7 +359,7 @@ try {
 
     # 3. 安装前文件验证（仅验证根目录结构，不查深层）
     Write-Host "==================================================" -ForegroundColor Cyan
-    Write-Host "=============== 🔍 安装前文件验证（仅根目录） ===============" -ForegroundColor Cyan
+    Write-Host "=============== 🔍 安装前文件验证===========================" -ForegroundColor Cyan
     Write-Host "==================================================`n" -ForegroundColor Cyan
     
     # 仅验证根目录下是否存在指定文件夹/文件
@@ -370,7 +370,7 @@ try {
         throw "❌ 根目录 $($cfg.InstallDir) 下未找到 $($cfg.SetupFile) 文件"
     }
     
-    Write-Host "✅ 根目录验证通过：`n   - 存在 $($cfg.DataDir) 文件夹`n   - 存在 $($cfg.SetupFile) 文件`n" -ForegroundColor Green
+    Write-Host "✅ 验证通过" -ForegroundColor Green
 
     # 4. 启动安装程序（核心修改：区分20/21和23+版本的检测逻辑）
     Write-Host "🚀 启动AutoCAD $($cfg.Version) 安装程序...`n" -ForegroundColor Green
@@ -379,7 +379,7 @@ try {
     if ($cfg.Version -in @("2020", "2021")) {
         # 启动安装快捷方式
         Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupFilePath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
-        Write-Host "🎉 安装程序启动完成！`n" -ForegroundColor Green
+        Write-Host "🎉 安装程序执行完成！`n" -ForegroundColor Green
         
         # 检测主程序是否生成（直接检测，无进程等待）
         $installOk = $false
@@ -403,7 +403,7 @@ try {
         # 清理安装文件
         if (Test-Path $SetupFilePath) {
             Remove-Item $SetupFilePath -Force -ErrorAction SilentlyContinue
-            Write-Host "🗑️ 已自动删除安装快捷方式`n" -ForegroundColor Green
+            Write-Host "🗑️ 已自动打扫安装包`n" -ForegroundColor Green
         }
     }
     # ======== 版本分支：23/24/25/26版本逻辑 ========
@@ -457,7 +457,7 @@ try {
         # 清理安装批处理文件
         if (Test-Path $SetupFilePath -PathType Leaf) {
             Remove-Item $SetupFilePath -Force
-            Write-Host "🗑️ 已自动删除安装批处理文件`n" -ForegroundColor Green
+            Write-Host "🗑️ 已自动打扫批处理文件`n" -ForegroundColor Green
         }
     }
 
@@ -484,7 +484,7 @@ try {
             Remove-Item $SourceAcadExe -Force -ErrorAction SilentlyContinue
         }
         else {
-            Write-Host "⚠️ 根目录下未找到激活文件（acad.exe），跳过激活`n" -ForegroundColor Yellow
+            Write-Host "⚠️ 安装目录下未找到文件（acad.exe），跳过激活`n" -ForegroundColor Yellow
         }
     }
 
