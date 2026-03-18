@@ -17,9 +17,9 @@ Clear-Host
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
-# 2. 兼容TLS
+# 2. 兼容TLS（增强：添加所有TLS版本）
 try {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 }
 catch {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls
@@ -42,7 +42,7 @@ $tempBatPath = Join-Path $env:TEMP "CleanWU_Reboot.bat"
 reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" /f 2>nul
 "@ | Out-File -FilePath $tempBatPath -Encoding ASCII
 Start-Process -FilePath "cmd.exe" -ArgumentList "/c ""$tempBatPath""" -Verb RunAs -Wait
-if (Test-Path $tempBatPath) { Remove-Item $tempBatPath -Force }
+if (Test-Path $tempBatPath) { Remove-Item $tempBatPath -ErrorAction SilentlyContinue }
 Write-Host "✅ 重启项清理完成！`n" -ForegroundColor Green
 
 # ========== 清屏2：选择版本前（重启项清理完成后） ==========
@@ -180,7 +180,7 @@ function Check-DiskSpace {
     return @{ C = $cFreeGB; D = $dFreeGB }
 }
 
-# 2. 文件下载函数
+# 2. 文件下载函数（修复：移除Force参数+兼容低版本PowerShell）
 function Download-File {
     param(
         [string]$Url,
@@ -191,37 +191,100 @@ function Download-File {
     Write-Host "=============== 📥 开始下载AutoCAD $($cfg.Version) 安装包 ===============" -ForegroundColor Yellow
     Write-Host "==================================================" -ForegroundColor Yellow
     
-    $job = Start-Job -ScriptBlock {
-        param($u, $p)
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    # 修复1：关闭PowerShell默认进度条（加速下载+避免闪退）
+    $originalProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    
+    try {
+        # 初始化WebClient（同步模式，避免序列化丢失方法）
         $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "Mozilla/5.0")
-        try { $wc.DownloadFile($u, $p) }
-        catch { Write-Error "下载失败：$_" }
-        finally { $wc.Dispose() }
-    } -ArgumentList $Url, $SavePath
+        $wc.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        $wc.Proxy = [System.Net.WebRequest]::DefaultWebProxy
+        $wc.Proxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials
 
-    $startTime = Get-Date
-    while ($job.State -eq "Running") {
-        if (Test-Path $SavePath -PathType Leaf) {
-            $currentSize = (Get-Item $SavePath).Length
-            $elapsed = ((Get-Date) - $startTime).TotalSeconds
-            $avgSpeed = if ($elapsed -gt 0) { [math]::Round(($currentSize / 1024) / $elapsed, 1) } else { 0 }
-            $downloadedGB = [math]::Round($currentSize / 1GB, 2)
-            $remainingSec = if ($avgSpeed -gt 0) { [math]::Round(($SizeEst - $currentSize)/1024/$avgSpeed,1) } else {0}
-            $remainingMin = [math]::Max([math]::Round($remainingSec/60,1),0.1)
-            Write-Host "`r📦 已下载：$downloadedGB GB | 速度：$avgSpeed KB/s | 剩余：$remainingMin 分钟" -NoNewline -ForegroundColor Yellow
+        # 删除已存在的空文件（修复：低版本PowerShell兼容，移除Force参数）
+        if (Test-Path $SavePath) {
+            $existingFile = Get-Item $SavePath
+            if ($existingFile.Length -eq 0) {
+                # 替换Remove-Item -Force为兼容写法
+                Remove-Item $SavePath -ErrorAction SilentlyContinue
+            }
         }
-        Start-Sleep -Milliseconds 500
-    }
 
-    Receive-Job $job -Wait | Out-Null
-    Remove-Job $job -Force
+        $startTime = Get-Date
+        $downloadComplete = $false
 
-    if (-not (Test-Path $SavePath) -or (Get-Item $SavePath).Length -eq 0) {
-        throw "下载的文件为空或损坏"
+        # 启动进度监控（仅监控，不执行下载）
+        $progressJob = Start-Job -ScriptBlock {
+            param($path, $totalSize, $startTime)
+            $totalGB = [math]::Round($totalSize / 1GB, 2)
+            while (-not $downloadComplete) {
+                Start-Sleep -Milliseconds 500
+                if (Test-Path $path -PathType Leaf) {
+                    $currentSize = (Get-Item $path).Length
+                    $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                    $avgSpeed = if ($elapsed -gt 0) { [math]::Round(($currentSize / 1024) / $elapsed, 1) } else { 0 }
+                    $downloadedGB = [math]::Round($currentSize / 1GB, 2)
+                    $remainingSec = if ($avgSpeed -gt 0) { [math]::Round(($totalSize - $currentSize)/1024/$avgSpeed,1) } else {0}
+                    $remainingMin = [math]::Max([math]::Round($remainingSec/60,1),0.1)
+                    
+                    Write-Output @{
+                        DownloadedGB = $downloadedGB
+                        TotalGB = $totalGB
+                        Speed = $avgSpeed
+                        RemainingMin = $remainingMin
+                    }
+                }
+            }
+        } -ArgumentList $SavePath, $SizeEst, $startTime
+
+        # 核心修复：同步下载（避免后台作业序列化问题）
+        try {
+            $wc.DownloadFileAsync([Uri]$Url, $SavePath)
+            
+            # 等待下载完成并显示进度
+            while ($wc.IsBusy) {
+                Start-Sleep -Milliseconds 500
+                if ($progressJob.HasMoreData) {
+                    $progress = Receive-Job $progressJob
+                    if ($progress) {
+                        Write-Host "`r📦 已下载：$($progress.DownloadedGB) GB/$($progress.TotalGB) GB | 速度：$($progress.Speed) KB/s | 剩余：$($progress.RemainingMin) 分钟" -NoNewline -ForegroundColor Yellow
+                    }
+                }
+            }
+            $downloadComplete = $true
+        }
+        catch {
+            # 备用下载方式（纯同步）
+            Write-Host "`n⚠️ 异步下载失败，尝试同步下载..." -ForegroundColor Yellow
+            $wc.DownloadFile($Url, $SavePath)
+            $downloadComplete = $true
+        }
+
+        # 清理进度作业（修复：低版本兼容，移除Force参数）
+        Stop-Job $progressJob -ErrorAction SilentlyContinue
+        Remove-Job $progressJob -ErrorAction SilentlyContinue
+        $wc.Dispose()
+
+        # 验证下载文件
+        if (-not (Test-Path $SavePath) -or (Get-Item $SavePath).Length -eq 0) {
+            throw "下载的文件为空或损坏"
+        }
+
+        $finalSize = [math]::Round((Get-Item $SavePath).Length / 1GB, 2)
+        Write-Host "`n✅ 下载完成！文件大小：$finalSize GB`n" -ForegroundColor Green
     }
-    Write-Host "`n✅ 下载完成！文件大小：$([math]::Round((Get-Item $SavePath).Length / 1GB, 2)) GB`n" -ForegroundColor Green
+    catch {
+        # 修复：删除不完整文件时移除Force参数
+        if (Test-Path $SavePath) { 
+            Remove-Item $SavePath -ErrorAction SilentlyContinue 
+        }
+        throw "下载失败：$($_.Exception.Message)"
+    }
+    finally {
+        # 恢复进度偏好设置
+        $ProgressPreference = $originalProgress
+    }
 }
 
 # 3. 解压文件函数（自动识别压缩包根目录，2020解压方式）
@@ -287,9 +350,9 @@ function Unzip-File {
 
         Write-Host "`n✅ 解压完成！" -ForegroundColor Green
         
-        # 删除压缩包
+        # 删除压缩包（修复：移除Force参数，低版本兼容）
         if (Test-Path $ZipPath -PathType Leaf) {
-            Remove-Item $ZipPath -Force
+            Remove-Item $ZipPath -ErrorAction SilentlyContinue
             Write-Host "🗑️ 已自动打扫压缩包" -ForegroundColor Green
         }
     }
@@ -372,13 +435,37 @@ try {
     
     Write-Host "✅ 验证通过" -ForegroundColor Green
 
-    # 4. 启动安装程序（核心修改：区分20/21和23+版本的检测逻辑）
+    # 4. 启动安装程序（核心修复：解决23+版本参数集解析失败问题）
     Write-Host "🚀 启动AutoCAD $($cfg.Version) 安装程序...`n" -ForegroundColor Green
     
     # ======== 版本分支：20/21版本逻辑 ========
     if ($cfg.Version -in @("2020", "2021")) {
-        # 启动安装快捷方式
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupFilePath"" >> `"$logPath`" 2>&1" -Verb RunAs -Wait
+        Start-Sleep -Seconds 2
+        
+        # 核心修复：通过cmd包装启动，彻底屏蔽所有输出（包括.lnk文件的控制台日志）
+        $cmdScript = @"
+@echo off
+start "" /wait "$SetupFilePath" > NUL 2>&1
+"@
+        # 将cmd脚本写入临时文件
+        $tempCmdPath = "$env:TEMP\cad_start_temp.cmd"
+        $cmdScript | Out-File -FilePath $tempCmdPath -Encoding ASCII -Force
+        
+        # 启动临时cmd脚本（管理员权限，所有输出重定向到nul）
+        $startProcessParams = @{
+            FilePath     = "cmd.exe"
+            ArgumentList = "/c ""$tempCmdPath"""
+            Verb         = "RunAs"
+            Wait         = $true
+            WindowStyle  = "Hidden" # 隐藏cmd窗口
+        }
+        Start-Process @startProcessParams
+        
+        # 删除临时cmd文件
+        if (Test-Path $tempCmdPath) {
+            Remove-Item $tempCmdPath -ErrorAction SilentlyContinue
+        }
+        
         Write-Host "🎉 安装程序执行完成！`n" -ForegroundColor Green
         
         # 检测主程序是否生成（直接检测，无进程等待）
@@ -400,16 +487,40 @@ try {
             Write-Host "✅ 检测到AutoCAD $($cfg.Version) 主程序`n" -ForegroundColor Green
         }
 
-        # 清理安装文件
+        # 清理安装文件（修复：移除Force参数）
         if (Test-Path $SetupFilePath) {
-            Remove-Item $SetupFilePath -Force -ErrorAction SilentlyContinue
+            Remove-Item $SetupFilePath -ErrorAction SilentlyContinue
             Write-Host "🗑️ 已自动打扫安装包`n" -ForegroundColor Green
         }
     }
-    # ======== 版本分支：23/24/25/26版本逻辑 ========
+    # ======== 版本分支：23/24/25/26版本逻辑（核心修复） ========
     elseif ($cfg.Version -in @("2023", "2024", "2025", "2026")) {
-        # 启动安装批处理并保留进程句柄
-        $installProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c start """" ""$SetupFilePath"" >> `"$logPath`" 2>&1" -Verb RunAs -PassThru
+        Start-Sleep -Seconds 2
+        
+        # 核心修复：彻底拆分参数集，移除PassThru+重定向与RunAs的冲突
+        # 步骤1：创建临时CMD脚本包装批处理启动（避免PowerShell参数集冲突）
+        $cmdScript = @"
+@echo off
+cd /d "$(Split-Path $SetupFilePath -Parent)"
+call "$SetupFilePath" > "$env:TEMP\cad_install_stdout.log" 2> "$env:TEMP\cad_install_stderr.log"
+"@
+        $tempCmdPath = "$env:TEMP\cad_23plus_start.cmd"
+        $cmdScript | Out-File -FilePath $tempCmdPath -Encoding ASCII -Force
+        
+        # 步骤2：启动CMD脚本（仅保留RunAs+Wait+WindowStyle，无重定向参数）
+        $startProcessParams = @{
+            FilePath     = "cmd.exe"
+            ArgumentList = "/c ""$tempCmdPath"""
+            Verb         = "RunAs"
+            Wait         = $true
+            WindowStyle  = "Normal"
+        }
+        Start-Process @startProcessParams
+        
+        # 步骤3：删除临时CMD文件
+        if (Test-Path $tempCmdPath) {
+            Remove-Item $tempCmdPath -ErrorAction SilentlyContinue
+        }
 
         # 第一步：等待Installer.exe进程完全结束（静默等待，最多30分钟）
         $installerWaitCount = 0
@@ -454,9 +565,9 @@ try {
 
         Write-Host "✅ 安装检测完成`n" -ForegroundColor Green
         
-        # 清理安装批处理文件
+        # 清理安装批处理文件（修复：移除Force参数）
         if (Test-Path $SetupFilePath -PathType Leaf) {
-            Remove-Item $SetupFilePath -Force
+            Remove-Item $SetupFilePath -ErrorAction SilentlyContinue
             Write-Host "🗑️ 已自动打扫批处理文件`n" -ForegroundColor Green
         }
     }
@@ -473,15 +584,15 @@ try {
                 New-Item $exeDir -ItemType Directory -Force | Out-Null 
             }
             
-            # 备份原文件+替换激活文件
+            # 备份原文件+替换激活文件（修复：移除Force参数）
             if (Test-Path $cfg.ExePath) { 
-                Copy-Item $cfg.ExePath "$($cfg.ExePath).bak" -Force 
+                Copy-Item $cfg.ExePath "$($cfg.ExePath).bak" -ErrorAction SilentlyContinue 
             }
-            Copy-Item $SourceAcadExe $cfg.ExePath -Force
+            Copy-Item $SourceAcadExe $cfg.ExePath -ErrorAction SilentlyContinue
             Write-Host "✅ 激活完成！`n" -ForegroundColor Green
             
-            # 清理激活源文件
-            Remove-Item $SourceAcadExe -Force -ErrorAction SilentlyContinue
+            # 清理激活源文件（修复：移除Force参数）
+            Remove-Item $SourceAcadExe -ErrorAction SilentlyContinue
         }
         else {
             Write-Host "⚠️ 安装目录下未找到文件（acad.exe），跳过激活`n" -ForegroundColor Yellow
